@@ -11,10 +11,17 @@ def load_data():
     try:
         return pd.read_csv('pulse_6_modules_clean.csv')
     except FileNotFoundError:
-        st.error("Файл 'pulse_6_modules_clean.csv' не найден. Запустите сначала make_data.py!")
+        st.error("Файл 'pulse_6_modules_clean.csv' не найден.")
         return pd.DataFrame()
 
 df = load_data()
+
+# Функция для расчета процентного соотношения внутри каждого модуля
+def get_pct_data(data_df, score_col):
+    grouped = data_df.groupby(['module_id', score_col]).size().reset_index(name='count')
+    grouped['total'] = grouped.groupby('module_id')['count'].transform('sum')
+    grouped['percentage'] = (grouped['count'] / grouped['total'] * 100).round(1)
+    return grouped
 
 if not df.empty:
     st.title("📊 Дашборд здоровья продукта: «Пульс модуля»")
@@ -55,41 +62,47 @@ if not df.empty:
 
     st.markdown("---")
 
-    # 2. Графики по всем 3 вопросам (3 колонки)
-    st.subheader("📊 Анализ сигналов по модулям")
+    # 2. Графики по всем 3 вопросам (в процентах)
+    st.subheader("📊 Распределение ответов по модулям (%)")
     col_q1, col_q2, col_q3 = st.columns(3)
 
     # Вопрос 1: Ритм
     with col_q1:
         st.markdown("**1. Ритм и Темп (Pacing)**")
-        p_data = filtered_df.groupby(['module_id', 'pacing_score']).size().reset_index(name='count')
+        p_data = get_pct_data(filtered_df, 'pacing_score')
         fig_p = px.bar(
-            p_data, x='module_id', y='count', color='pacing_score', 
+            p_data, x='module_id', y='percentage', color='pacing_score',
             color_discrete_map={'rushed': '#EF553B', 'optimal': '#00CC96', 'slow': '#AB63FA'},
-            labels={'module_id': 'Модуль', 'count': 'Студентов', 'pacing_score': 'Ответ'}
+            labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'pacing_score': 'Ответ', 'count': 'Студентов'},
+            hover_data={'count': True, 'percentage': ':.1f%'}
         )
+        fig_p.update_layout(yaxis_suffix="%")
         st.plotly_chart(fig_p, use_container_width=True)
 
     # Вопрос 2: Связность
     with col_q2:
         st.markdown("**2. Связность и Логика (Cohesion)**")
-        c_data = filtered_df.groupby(['module_id', 'cohesion_score']).size().reset_index(name='count')
+        c_data = get_pct_data(filtered_df, 'cohesion_score')
         fig_c = px.bar(
-            c_data, x='module_id', y='count', color='cohesion_score', 
+            c_data, x='module_id', y='percentage', color='cohesion_score',
             color_discrete_map={'clear': '#00CC96', 'confused': '#FFA15A', 'fragmented': '#EF553B'},
-            labels={'module_id': 'Модуль', 'count': 'Студентов', 'cohesion_score': 'Ответ'}
+            labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'cohesion_score': 'Ответ', 'count': 'Студентов'},
+            hover_data={'count': True, 'percentage': ':.1f%'}
         )
+        fig_c.update_layout(yaxis_suffix="%")
         st.plotly_chart(fig_c, use_container_width=True)
 
     # Вопрос 3: Ресурс / Энергия
     with col_q3:
         st.markdown("**3. Состояние ресурса (Energy)**")
-        e_data = filtered_df.groupby(['module_id', 'energy_score']).size().reset_index(name='count')
+        e_data = get_pct_data(filtered_df, 'energy_score')
         fig_e = px.bar(
-            e_data, x='module_id', y='count', color='energy_score', 
+            e_data, x='module_id', y='percentage', color='energy_score',
             color_discrete_map={'high': '#00CC96', 'moderate': '#FFA15A', 'depleted': '#EF553B'},
-            labels={'module_id': 'Модуль', 'count': 'Студентов', 'energy_score': 'Ответ'}
+            labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'energy_score': 'Ответ', 'count': 'Студентов'},
+            hover_data={'count': True, 'percentage': ':.1f%'}
         )
+        fig_e.update_layout(yaxis_suffix="%")
         st.plotly_chart(fig_e, use_container_width=True)
 
     st.markdown("---")
