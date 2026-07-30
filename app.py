@@ -76,7 +76,7 @@ if not df.empty:
             labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'pacing_score': 'Ответ', 'count': 'Студентов'},
             hover_data={'count': True, 'percentage': ':.1f%'}
         )
-        fig_p.update_layout(yaxis_suffix="%")
+        fig_p.update_yaxes(ticksuffix="%")
         st.plotly_chart(fig_p, use_container_width=True)
 
     # Вопрос 2: Связность
@@ -89,7 +89,7 @@ if not df.empty:
             labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'cohesion_score': 'Ответ', 'count': 'Студентов'},
             hover_data={'count': True, 'percentage': ':.1f%'}
         )
-        fig_c.update_layout(yaxis_suffix="%")
+        fig_c.update_yaxes(ticksuffix="%")
         st.plotly_chart(fig_c, use_container_width=True)
 
     # Вопрос 3: Ресурс / Энергия
@@ -102,7 +102,7 @@ if not df.empty:
             labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'energy_score': 'Ответ', 'count': 'Студентов'},
             hover_data={'count': True, 'percentage': ':.1f%'}
         )
-        fig_e.update_layout(yaxis_suffix="%")
+        fig_e.update_yaxes(ticksuffix="%")
         st.plotly_chart(fig_e, use_container_width=True)
 
     st.markdown("---")
