@@ -1,22 +1,101 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 
 # Настройки страницы
 st.set_page_config(page_title="Product Health Dashboard", page_icon="📊", layout="wide")
 
-# Загрузка данных
+# -------------------------------------------------------------
+# Функция автоматической генерации синтетического датасета
+# (Работает прямо в облаке Streamlit, если файла нет)
+# -------------------------------------------------------------
+def generate_synthetic_data():
+    np.random.seed(42)
+    n_students = 200
+    student_ids = [f'STU_{1000 + i}' for i in range(1, n_students + 1)]
+    modules = [f'MOD_0{i}' for i in range(1, 7)]
+
+    comments_pool = [
+        "", "", "", "", "", "",
+        "Очень понравился практический разбор в этом модуле!",
+        "Слишком много теории, не успеваю за дедлайнами.",
+        "Не хватило разбора типовых ошибок в домашнем задании.",
+        "Спикер отлично объясняет сложные темы, спасибо!",
+        "Трудные практические кейсы, долго разбирался с тренажером.",
+        "Платформа иногда зависала при отправке решений.",
+        "Тьютор оперативно помог в чате, очень ценно."
+    ]
+
+    data = []
+    for student in student_ids:
+        student_resilience = np.random.choice(['high', 'medium', 'low'], p=[0.3, 0.5, 0.2])
+        
+        for mod_idx, mod in enumerate(modules):
+            # 1. Core Pulse
+            if mod in ['MOD_03', 'MOD_04']:
+                pacing_p = [0.45, 0.50, 0.05] if student_resilience != 'low' else [0.65, 0.30, 0.05]
+            else:
+                pacing_p = [0.20, 0.75, 0.05]
+                
+            if mod in ['MOD_04', 'MOD_05']:
+                cohesion_p = [0.60, 0.30, 0.10]
+            else:
+                cohesion_p = [0.80, 0.15, 0.05]
+                
+            if mod_idx >= 3:
+                energy_p = [0.25, 0.45, 0.30] if student_resilience == 'low' else [0.40, 0.45, 0.15]
+            else:
+                energy_p = [0.65, 0.30, 0.05]
+                
+            pacing = np.random.choice(['rushed', 'optimal', 'slow'], p=pacing_p)
+            cohesion = np.random.choice(['clear', 'confused', 'fragmented'], p=cohesion_p)
+            energy = np.random.choice(['high', 'moderate', 'depleted'], p=energy_p)
+            
+            # 2. Legacy CSAT (1-5)
+            base_mean = 4.5 if student_resilience == 'high' else (4.1 if student_resilience == 'medium' else 3.6)
+            if cohesion == 'fragmented':
+                base_mean -= 0.7
+                
+            legacy_speaker = int(np.clip(np.random.normal(base_mean, 0.6), 1, 5))
+            legacy_platform = int(np.clip(np.random.normal(4.3, 0.6), 1, 5))
+            legacy_homework = int(np.clip(np.random.normal(base_mean - 0.2, 0.8), 1, 5))
+            legacy_materials = int(np.clip(np.random.normal(base_mean, 0.6), 1, 5))
+            legacy_support = int(np.clip(np.random.normal(4.4, 0.7), 1, 5))
+            
+            open_text = np.random.choice(comments_pool)
+            
+            data.append({
+                'student_id': student,
+                'module_id': mod,
+                'pacing_score': pacing,
+                'cohesion_score': cohesion,
+                'energy_score': energy,
+                'legacy_speaker': legacy_speaker,
+                'legacy_platform': legacy_platform,
+                'legacy_homework': legacy_homework,
+                'legacy_materials': legacy_materials,
+                'legacy_support': legacy_support,
+                'open_feedback_text': open_text
+            })
+
+    return pd.DataFrame(data)
+
+# Загрузка данных с автогенерацией
 @st.cache_data
 def load_data():
     try:
-        return pd.read_csv('pulse_6_modules_clean.csv')
+        df = pd.read_csv('pulse_6_modules_clean.csv')
+        # Проверяем, есть ли новые колонки, если нет — пересоздаем
+        if 'legacy_speaker' not in df.columns:
+            df = generate_synthetic_data()
     except FileNotFoundError:
-        st.error("Файл 'pulse_6_modules_clean.csv' не найден. Запустите make_data.py!")
-        return pd.DataFrame()
+        df = generate_synthetic_data()
+    return df
 
 df = load_data()
 
-# Функция расчета процентов для stacked-диаграмм
+# Функция расчета процентов
 def get_pct_data(data_df, score_col):
     grouped = data_df.groupby(['module_id', score_col]).size().reset_index(name='count')
     grouped['total'] = grouped.groupby('module_id')['count'].transform('sum')
@@ -27,7 +106,7 @@ if not df.empty:
     st.title("📊 Дашборд здоровья продукта (Hybrid MVP v1.0)")
     st.caption("Единый аналитический контур: Атомарный Пульс + Legacy CSAT + Closed-Loop")
 
-    # Боковая панель с глобальным фильтром модулей
+    # Боковая панель
     st.sidebar.header("Фильтры")
     selected_modules = st.sidebar.multiselect(
         "Выберите модули:",
@@ -36,35 +115,29 @@ if not df.empty:
     )
     filtered_df = df[df['module_id'].isin(selected_modules)]
 
-    # Вычисление Churn Risk (Правило 1: 2x depleted | Правило 2: fragmented + legacy <= 2)
+    # Расчет Churn Risk
     df_sorted = df.sort_values(['student_id', 'module_id'])
     churn_alert_students = set()
     
     for student_id, group in df_sorted.groupby('student_id'):
         energies = group['energy_score'].tolist()
         cohesions = group['cohesion_score'].tolist()
-        
-        # Проверка наследуемых оценок для правила 2
         min_legacy = group[['legacy_speaker', 'legacy_homework', 'legacy_materials']].min(axis=1).tolist()
         
         for i in range(len(energies)):
-            # Правило 1: Истощение 2 раза подряд
             if i < len(energies) - 1 and energies[i] == 'depleted' and energies[i+1] == 'depleted':
                 churn_alert_students.add(student_id)
-            # Правило 2: Разрыв связности + низкая оценка legacy
             if cohesions[i] == 'fragmented' and min_legacy[i] <= 2:
                 churn_alert_students.add(student_id)
 
-    # СОЗДАЕМ 3 ВКЛАДКИ СОГЛАСНО ТЗ
+    # 3 ВКЛАДКИ
     tab1, tab2, tab3 = st.tabs([
         "🟢 Вкладка 1: Пульс Здоровья (Core)", 
         "🟡 Вкладка 2: Legacy CSAT (Стейкхолдеры)", 
         "🔴 Вкладка 3: Closed-Loop & Вербатим"
     ])
 
-    # ==========================================
-    # ВКЛАДКА 1: ПУЛЬС ЗДОРОВЬЯ ПРОДУКТА
-    # ==========================================
+    # ВКЛАДКА 1
     with tab1:
         st.subheader("Ключевые опережающие индикаторы (Leading Indicators)")
         c1, c2, c3, c4 = st.columns(4)
@@ -119,14 +192,11 @@ if not df.empty:
             fig_e.update_yaxes(ticksuffix="%")
             st.plotly_chart(fig_e, use_container_width=True)
 
-    # ==========================================
-    # ВКЛАДКА 2: LEGACY CSAT & ДЕТАЛИЗАЦИЯ
-    # ==========================================
+    # ВКЛАДКА 2
     with tab2:
         st.subheader("Наследуемые оценки CSAT (Шкала 1–5)")
         st.caption("Раздел для мониторинга исторических показателей стейкхолдерами")
 
-        # Кросс-анализ / Фильтр по сегментам
         segment_filter = st.radio(
             "Срез когорты для анализа средних оценок:",
             ["Все студенты", "Только с историей спешки (Rushed)", "Только в состоянии истощения (Depleted)"],
@@ -161,9 +231,7 @@ if not df.empty:
             fig_trend.update_yaxes(range=[1, 5])
             st.plotly_chart(fig_trend, use_container_width=True)
 
-    # ==========================================
-    # ВКЛАДКА 3: CLOSED-LOOP & ВЕРБАТИМ
-    # ==========================================
+    # ВКЛАДКА 3
     with tab3:
         st.subheader("🚨 Рабочее место тьютора / Службы заботы")
         
