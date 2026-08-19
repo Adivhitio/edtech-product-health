@@ -5,11 +5,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 st.set_page_config(
-    page_title="Дашборд: Пульс Модуля & CSAT", page_icon="📊", layout="wide"
+    page_title="Дашборд: Пульс Модуля & CSI", page_icon="📊", layout="wide"
 )
 
 
-# Загрузка или автоматическая генерация данных в памяти
+# Загрузка данных или автоматическая генерация в памяти
 @st.cache_data
 def load_data():
   try:
@@ -36,19 +36,23 @@ def load_data():
 
     sample_comments = {
         "positive": [
-            "Всё отлично, материал структурирован.",
+            "Всё отлично, материал структурирован и понятен.",
             "Очень понравилась практика на реальных данных!",
-            "Лектор круто объясняет сложные алгоритмы.",
+            "Лектор круто объясняет сложные темы.",
             "Супер модуль, всё разложилось по полочкам.",
+            "Куратор ответил за 5 минут, очень помог с кодом!",
         ],
         "pacing": [
             "Не успевал за дедлайнами, слишком много информации.",
-            "Очень плотный график, нужно больше времени на ДЗ.",
+            (
+                "Очень плотный график, нужно больше времени на выполнение"
+                " заданий."
+            ),
             "Хотелось бы чуть больше времени на закрепление материала.",
         ],
         "cohesion": [
             "Сложно связать теорию 2-го урока с практическим заданием.",
-            "В ДЗ требуют то, чего не было в лекциях.",
+            "В ДЗ требуют то, чего не было в видео-лекциях.",
             "Каша в голове после 3-го урока, не хватило сквозного примера.",
         ],
         "energy": [
@@ -56,10 +60,24 @@ def load_data():
             "Выгораю, совмещать с работой очень тяжело.",
             "Нужен небольшой перерыв перед следующим блоком.",
         ],
-        "legacy": [
-            "Звук на вебинаре хрипел.",
-            "Тьютор проверял ДЗ более 4 дней.",
-            "Плеер периодически зависает на мобильном.",
+        "materials": [
+            "В лонгриде к уроку 4 опечатка в формуле/коде.",
+            "Скринкасты записаны с плохим микрофоном, тихо слышно.",
+            "Хотелось бы больше текстовых шпаргалок к видео-лекциям.",
+        ],
+        "tasks": [
+            "В квизе некорректно сформулирован 3-й вопрос.",
+            "Тесты падают из-за несовместимости версий библиотек.",
+            "Критерии проверки самостоятельного задания размыты.",
+        ],
+        "support": [
+            "Координатор долго не отвечал на вопрос по доступу к платформе.",
+            "Аспирант проверял ДЗ 4 дня вместо положенных двух.",
+            "Хотелось бы более подробной обратной связи от проверяющего.",
+        ],
+        "platform": [
+            "Видео-плеер периодически сбрасывает скорость воспроизведения.",
+            "В мобильной версии сайта неудобно проходить тесты.",
         ],
     }
 
@@ -78,7 +96,7 @@ def load_data():
           fatigue_bias = 0.05 * mod_num
 
           for s_id in student_ids:
-            # Pacing
+            # 1. MHI: Pacing
             p_rushed = min(
                 0.6, 0.15 + difficulty_bias + np.random.uniform(0, 0.08)
             )
@@ -88,7 +106,7 @@ def load_data():
                 ["rushed", "optimal", "slow"], p=[p_rushed, p_opt, p_slow]
             )
 
-            # Cohesion
+            # 2. MHI: Cohesion
             p_frag = min(
                 0.4, 0.08 + difficulty_bias + np.random.uniform(0, 0.06)
             )
@@ -99,7 +117,7 @@ def load_data():
                 p=[p_clear, p_conf, p_frag],
             )
 
-            # Energy
+            # 3. MHI: Energy
             p_dep = min(
                 0.55,
                 0.10
@@ -113,11 +131,11 @@ def load_data():
                 ["high", "moderate", "depleted"], p=[p_high, p_mod, p_dep]
             )
 
-            # Legacy ratings (1-5)
+            # Базовая шкала для генерации оценок 1-5
             base = (
                 4.4
-                - (0.6 if pacing == "rushed" else 0)
-                - (0.8 if cohesion == "fragmented" else 0)
+                - (0.5 if pacing == "rushed" else 0)
+                - (0.7 if cohesion == "fragmented" else 0)
             )
 
             def gen_score(b_val):
@@ -131,10 +149,14 @@ def load_data():
               w = np.array(weights)
               return int(np.random.choice([1, 2, 3, 4, 5], p=w / w.sum()))
 
-            score_spk = gen_score(base + np.random.normal(0.2, 0.3))
-            score_hw = gen_score(base - (0.3 if cohesion != "clear" else 0))
-            score_plt = gen_score(4.5 + np.random.normal(0, 0.2))
-            score_sup = gen_score(4.3 + np.random.normal(0, 0.3))
+            score_materials = gen_score(base + np.random.normal(0.1, 0.25))
+            score_tasks = gen_score(
+                base - (0.4 if cohesion != "clear" else 0)
+            )
+            score_experts = gen_score(base + np.random.normal(0.2, 0.3))
+            score_sup_speed = gen_score(4.3 + np.random.normal(0, 0.35))
+            score_sup_care = gen_score(4.4 + np.random.normal(0, 0.3))
+            score_platform = gen_score(4.5 + np.random.normal(0, 0.2))
 
             comment = ""
             if np.random.rand() < 0.25:
@@ -144,8 +166,14 @@ def load_data():
                 comment = np.random.choice(sample_comments["pacing"])
               elif cohesion == "fragmented":
                 comment = np.random.choice(sample_comments["cohesion"])
-              elif score_spk <= 2 or score_hw <= 2:
-                comment = np.random.choice(sample_comments["legacy"])
+              elif score_tasks <= 2:
+                comment = np.random.choice(sample_comments["tasks"])
+              elif score_materials <= 2:
+                comment = np.random.choice(sample_comments["materials"])
+              elif score_sup_speed <= 2 or score_sup_care <= 2:
+                comment = np.random.choice(sample_comments["support"])
+              elif score_platform <= 2:
+                comment = np.random.choice(sample_comments["platform"])
               else:
                 comment = np.random.choice(sample_comments["positive"])
 
@@ -158,10 +186,12 @@ def load_data():
                 "pacing_score": pacing,
                 "cohesion_score": cohesion,
                 "energy_score": energy,
-                "legacy_speaker": score_spk,
-                "legacy_hw": score_hw,
-                "legacy_platform": score_plt,
-                "legacy_support": score_sup,
+                "legacy_materials": score_materials,
+                "legacy_tasks": score_tasks,
+                "legacy_experts": score_experts,
+                "legacy_support_speed": score_sup_speed,
+                "legacy_support_care": score_sup_care,
+                "legacy_platform": score_platform,
                 "open_feedback": comment,
             })
     return pd.DataFrame(rows)
@@ -189,7 +219,7 @@ if not selected_cohorts:
   st.warning("Пожалуйста, выберите хотя бы один поток в сайдбаре.")
   st.stop()
 
-# Фильтрация по выбранным когортам
+# Фильтрация по когортам
 df = course_df[course_df["cohort"].isin(selected_cohorts)]
 
 all_modules = sorted(df["module_id"].unique())
@@ -199,17 +229,17 @@ selected_modules = st.sidebar.multiselect(
 
 df_filtered = df[df["module_id"].isin(selected_modules)]
 
-# Заголовок
+# Шапка дашборда
 st.title(f"📊 Аналитика здоровья продукта: {selected_course}")
 st.caption(
     f"Выбрано потоков: **{len(selected_cohorts)}** | Ответов в выборке:"
     f" **{len(df_filtered)}**"
 )
 
-# Три целевые вкладки
+# Вкладки
 tab1, tab2, tab3 = st.tabs([
     "🟢 1. Пульс здоровья (MHI)",
-    "🟡 2. Legacy CSAT & Детализация",
+    "🟡 2. Унаследованные метрики (CSI)",
     "🔴 3. Closed-Loop & Вербатим",
 ])
 
@@ -271,7 +301,7 @@ with tab1:
 
   st.divider()
 
-  st.markdown("##### 📌 Распределение ответов по модулям")
+  st.markdown("##### 📌 Распределение ответов по модулям (100% Stacked Bar)")
   c1, c2, c3 = st.columns(3)
 
   def build_stacked_chart(df_in, col, cat_order, color_map, title):
@@ -313,7 +343,7 @@ with tab1:
         "pacing_score",
         ["slow", "optimal", "rushed"],
         {"rushed": "#D32F2F", "optimal": "#388E3C", "slow": "#FBC02D"},
-        "Ритм и спешка (Pacing)",
+        "Ритм и темп обучения (Pacing)",
     )
     st.plotly_chart(fig_pacing, use_container_width=True)
 
@@ -323,7 +353,7 @@ with tab1:
         "cohesion_score",
         ["fragmented", "confused", "clear"],
         {"fragmented": "#D32F2F", "confused": "#FBC02D", "clear": "#388E3C"},
-        "Связность и логика (Cohesion)",
+        "Логика и связность (Cohesion)",
     )
     st.plotly_chart(fig_cohesion, use_container_width=True)
 
@@ -333,13 +363,13 @@ with tab1:
         "energy_score",
         ["depleted", "moderate", "high"],
         {"depleted": "#D32F2F", "moderate": "#FBC02D", "high": "#388E3C"},
-        "Ресурс и энергия (Energy)",
+        "Ресурс и запас сил (Energy)",
     )
     st.plotly_chart(fig_energy, use_container_width=True)
 
   if len(selected_cohorts) > 1:
     st.divider()
-    st.markdown("##### 📈 Межпоточный тренд: Доля алертов по когортам")
+    st.markdown("##### 📈 Межпоточный тренд: Динамика алертов по когортам")
     cohort_trend = (
         df.groupby("cohort")
         .apply(
@@ -384,16 +414,30 @@ with tab1:
     st.plotly_chart(fig_trend, use_container_width=True)
 
 # ==========================================
-# ВКЛАДКА 2: LEGACY CSAT & ДЕТАЛИЗАЦИЯ
+# ВКЛАДКА 2: УНАСЛЕДОВАННЫЕ МЕТРИКИ (CSI)
 # ==========================================
 with tab2:
-  st.subheader("Унаследованные метрики (1–5) и структурный анализ")
+  st.subheader("Унаследованные метрики CSI (шкала 1–5)")
+  st.caption(
+      "Структурный анализ распределения: Top-2 Box (% довольных) и Bottom-2 Box"
+      " (% недовольных)."
+  )
 
   legacy_map = {
-      "legacy_speaker": "Спикер / Эксперт",
-      "legacy_hw": "Домашние задания / Практика",
-      "legacy_platform": "Удобство платформы (LMS)",
-      "legacy_support": "Служба поддержки / Сопровождение",
+      "legacy_materials": (
+          "Качество учебных материалов: лонгриды, видео-лекции, скринкасты"
+      ),
+      "legacy_tasks": (
+          "Качество заданий: тесты, квизы, самостоятельные задания"
+      ),
+      "legacy_experts": "Работа экспертов / преподавателей в этом модуле",
+      "legacy_support_speed": (
+          "Скорость работы команды сопровождения: координатора, аспиранта"
+      ),
+      "legacy_support_care": (
+          "Забота и поддержка команды сопровождения (эмпатия)"
+      ),
+      "legacy_platform": "Удобство сайта / платформы в рамках модуля",
   }
 
   summary_rows = []
@@ -401,14 +445,10 @@ with tab2:
     s = df_filtered[col]
     top2 = (s >= 4).mean() * 100
     bot2 = (s <= 2).mean() * 100
-    mean_val = s.mean()
-    med_val = s.median()
     summary_rows.append({
-        "Показатель": name,
+        "Показатель (Вопрос)": name,
         "Top-2 Box (4–5)": f"{top2:.1f}%",
         "Bottom-2 Box (1–2)": f"{bot2:.1f}%",
-        "Среднее (1–5)": f"{mean_val:.2f}",
-        "Медиана": f"{med_val:.1f}",
         "Статус": (
             "🔴 Критично"
             if bot2 > 15
@@ -420,9 +460,9 @@ with tab2:
 
   st.divider()
 
-  st.markdown("##### 🔍 Фокусный Deep-Dive по конкретному вопросу")
+  st.markdown("##### 🔍 Фокусный Deep-Dive по конкретному вопросу CSI")
   focus_col_name = st.selectbox(
-      "Выберите параметр для детального анализа распределения:",
+      "Выберите вопрос для детального анализа распределения оценок:",
       list(legacy_map.values()),
   )
   focus_col = [k for k, v in legacy_map.items() if v == focus_col_name][0]
@@ -473,7 +513,7 @@ with tab2:
     st.plotly_chart(fig_leg, use_container_width=True)
 
   with col_pivot:
-    st.markdown(f"**Pivot-таблица по модулям ({focus_col_name}):**")
+    st.markdown(f"**Pivot-таблица распределения по модулям (%):**")
     pivot_table = pd.pivot_table(
         df_filtered,
         index="module_id",
@@ -493,7 +533,8 @@ with tab3:
   churn_condition = (df_filtered["energy_score"] == "depleted") & (
       (df_filtered["pacing_score"] == "rushed")
       | (df_filtered["cohesion_score"] == "fragmented")
-      | (df_filtered["legacy_hw"] <= 2)
+      | (df_filtered["legacy_tasks"] <= 2)
+      | (df_filtered["legacy_materials"] <= 2)
   )
 
   df_alerts = df_filtered[churn_condition][
@@ -504,7 +545,8 @@ with tab3:
           "energy_score",
           "pacing_score",
           "cohesion_score",
-          "legacy_hw",
+          "legacy_tasks",
+          "legacy_materials",
           "open_feedback",
       ]
   ].copy()
@@ -513,8 +555,8 @@ with tab3:
       f"##### 🚨 Реестр студентов в зоне высокого риска оттока ({len(df_alerts)} чел.)"
   )
   st.caption(
-      "Критерий алерта: Сильное истощение (depleted) + спешка / дефицит логики /"
-      " низкая оценка практики."
+      "Критерий алерта: Истощение (depleted) в сочетании со спешкой, разрывом"
+      " логики или критически низкой оценкой практики/материалов."
   )
 
   if not df_alerts.empty:
@@ -527,7 +569,8 @@ with tab3:
                 "energy_score": "Ресурс",
                 "pacing_score": "Ритм",
                 "cohesion_score": "Связность",
-                "legacy_hw": "Оценка ДЗ",
+                "legacy_tasks": "Оценка заданий",
+                "legacy_materials": "Оценка теории",
                 "open_feedback": "Комментарий",
             }
         ),
@@ -552,7 +595,7 @@ with tab3:
 
   search_term = st.text_input(
       "Поиск по ключевым словам в комментариях:",
-      placeholder="Например: звук, дедлайн, каша, практика...",
+      placeholder="Например: звук, опечатка, дедлайн, каша, плеер...",
   )
   if search_term:
     feedback_df = feedback_df[
