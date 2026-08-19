@@ -5,11 +5,13 @@ import plotly.graph_objects as go
 import streamlit as st
 
 st.set_page_config(
-    page_title="Дашборд: Пульс Модуля & CSI", page_icon="📊", layout="wide"
+    page_title="Дашборд: Пульс Модуля & Пилотный Эксперимент",
+    page_icon="📊",
+    layout="wide",
 )
 
 
-# Загрузка данных или автоматическая генерация в памяти
+# Загрузка данных или генерация в памяти
 @st.cache_data
 def load_data():
   try:
@@ -17,20 +19,20 @@ def load_data():
   except FileNotFoundError:
     np.random.seed(42)
     courses = {
-        "DATA_SCI": {
-            "name": "Data Science с нуля",
-            "modules": 6,
-            "cohorts": ["DS-01 (Январь)", "DS-02 (Март)", "DS-03 (Май)"],
+        "DATA_ANALYTICS": {
+            "name": "Аналитик данных (Upskill)",
+            "modules": 5,
+            "cohorts": ["DA-Pilot-01", "DA-Pilot-02", "DA-Pilot-03"],
         },
-        "PY_DEV": {
-            "name": "Python-разработчик",
-            "modules": 6,
-            "cohorts": ["PY-05 (Февраль)", "PY-06 (Апрель)", "PY-07 (Июнь)"],
-        },
-        "PROD_MGMT": {
-            "name": "Управление продуктом",
+        "PROD_MGMT_UP": {
+            "name": "Продуктовый менеджмент (Upskill)",
             "modules": 4,
-            "cohorts": ["PM-10 (Январь)", "PM-11 (Апрель)"],
+            "cohorts": ["PM-Pilot-01", "PM-Pilot-02"],
+        },
+        "PY_DEV_UP": {
+            "name": "Python для разработки (Upskill)",
+            "modules": 5,
+            "cohorts": ["PY-Pilot-01", "PY-Pilot-02"],
         },
     }
 
@@ -84,120 +86,173 @@ def load_data():
     rows = []
     for c_key, c_info in courses.items():
       for cohort in c_info["cohorts"]:
-        num_students = 100
+        cohort_pop_size = 120
+        num_respondents = int(cohort_pop_size * np.random.uniform(0.80, 0.94))
         student_ids = [
-            f"{c_key[:3]}_{cohort.split()[0]}_{i:03d}"
-            for i in range(1, num_students + 1)
+            f"{c_key[:3]}_{cohort.replace('-', '')}_{i:03d}"
+            for i in range(1, num_respondents + 1)
         ]
 
         for mod_num in range(1, c_info["modules"] + 1):
           mod_id = f"MOD_{mod_num:02d}"
-          difficulty_bias = 0.15 if mod_num in [3, 4] else 0.0
+          difficulty_bias = 0.15 if mod_num in [2, 3] else 0.0
           fatigue_bias = 0.05 * mod_num
 
           for s_id in student_ids:
-            # 1. MHI: Pacing
-            p_rushed = min(
-                0.6, 0.15 + difficulty_bias + np.random.uniform(0, 0.08)
-            )
-            p_slow = 0.10
-            p_opt = max(0.2, 1.0 - p_rushed - p_slow)
-            pacing = np.random.choice(
-                ["rushed", "optimal", "slow"], p=[p_rushed, p_opt, p_slow]
-            )
+            # Генерация шума/прокликов (Speedrunners ~10%)
+            is_speedrunner = np.random.rand() < 0.10
 
-            # 2. MHI: Cohesion
-            p_frag = min(
-                0.4, 0.08 + difficulty_bias + np.random.uniform(0, 0.06)
-            )
-            p_conf = min(0.5, 0.20 + difficulty_bias)
-            p_clear = max(0.2, 1.0 - p_frag - p_conf)
-            cohesion = np.random.choice(
-                ["clear", "confused", "fragmented"],
-                p=[p_clear, p_conf, p_frag],
-            )
-
-            # 3. MHI: Energy
-            p_dep = min(
-                0.55,
-                0.10
-                + fatigue_bias * 0.05
-                + (0.15 if pacing == "rushed" else 0.0)
-                + (0.10 if cohesion == "fragmented" else 0.0),
-            )
-            p_mod = 0.40
-            p_high = max(0.1, 1.0 - p_dep - p_mod)
-            energy = np.random.choice(
-                ["high", "moderate", "depleted"], p=[p_high, p_mod, p_dep]
-            )
-
-            # Базовая шкала для генерации оценок 1-5
-            base = (
-                4.4
-                - (0.5 if pacing == "rushed" else 0)
-                - (0.7 if cohesion == "fragmented" else 0)
-            )
-
-            def gen_score(b_val):
-              weights = [
-                  max(0.01, 1.0 - b_val / 2),
-                  max(0.02, 1.5 - b_val / 2.5),
-                  max(0.05, 2.0 - b_val / 3),
-                  max(0.1, b_val / 5),
-                  max(0.15, (b_val / 5) ** 2),
-              ]
-              w = np.array(weights)
-              return int(np.random.choice([1, 2, 3, 4, 5], p=w / w.sum()))
-
-            score_materials = gen_score(base + np.random.normal(0.1, 0.25))
-            score_tasks = gen_score(
-                base - (0.4 if cohesion != "clear" else 0)
-            )
-            score_experts = gen_score(base + np.random.normal(0.2, 0.3))
-            score_sup_speed = gen_score(4.3 + np.random.normal(0, 0.35))
-            score_sup_care = gen_score(4.4 + np.random.normal(0, 0.3))
-            score_platform = gen_score(4.5 + np.random.normal(0, 0.2))
-
-            comment = ""
-            if np.random.rand() < 0.25:
-              if energy == "depleted":
-                comment = np.random.choice(sample_comments["energy"])
-              elif pacing == "rushed":
-                comment = np.random.choice(sample_comments["pacing"])
-              elif cohesion == "fragmented":
-                comment = np.random.choice(sample_comments["cohesion"])
-              elif score_tasks <= 2:
-                comment = np.random.choice(sample_comments["tasks"])
-              elif score_materials <= 2:
-                comment = np.random.choice(sample_comments["materials"])
-              elif score_sup_speed <= 2 or score_sup_care <= 2:
-                comment = np.random.choice(sample_comments["support"])
-              elif score_platform <= 2:
-                comment = np.random.choice(sample_comments["platform"])
+            if is_speedrunner:
+              noise_type = np.random.choice(
+                  ["straight_5", "first_opt_conflict", "straight_1"],
+                  p=[0.65, 0.25, 0.10],
+              )
+              if noise_type == "straight_5":
+                pacing, cohesion, energy = "rushed", "clear", "high"
+                scores = [5, 5, 5, 5, 5, 5]
+              elif noise_type == "first_opt_conflict":
+                pacing, cohesion, energy = "rushed", "fragmented", "depleted"
+                scores = [5, 5, 5, 5, 5, 5]
               else:
-                comment = np.random.choice(sample_comments["positive"])
+                pacing, cohesion, energy = "rushed", "fragmented", "depleted"
+                scores = [1, 1, 1, 1, 1, 1]
+              comment = ""
+            else:
+              p_rushed = min(
+                  0.55, 0.15 + difficulty_bias + np.random.uniform(0, 0.06)
+              )
+              p_slow = 0.10
+              p_opt = max(0.2, 1.0 - p_rushed - p_slow)
+              pacing = np.random.choice(
+                  ["rushed", "optimal", "slow"], p=[p_rushed, p_opt, p_slow]
+              )
+
+              p_frag = min(
+                  0.35, 0.08 + difficulty_bias + np.random.uniform(0, 0.05)
+              )
+              p_conf = min(0.45, 0.20 + difficulty_bias)
+              p_clear = max(0.2, 1.0 - p_frag - p_conf)
+              cohesion = np.random.choice(
+                  ["clear", "confused", "fragmented"],
+                  p=[p_clear, p_conf, p_frag],
+              )
+
+              p_dep = min(
+                  0.50,
+                  0.10
+                  + fatigue_bias * 0.05
+                  + (0.15 if pacing == "rushed" else 0.0)
+                  + (0.10 if cohesion == "fragmented" else 0.0),
+              )
+              p_mod = 0.40
+              p_high = max(0.1, 1.0 - p_dep - p_mod)
+              energy = np.random.choice(
+                  ["high", "moderate", "depleted"], p=[p_high, p_mod, p_dep]
+              )
+
+              base = (
+                  4.4
+                  - (0.5 if pacing == "rushed" else 0)
+                  - (0.7 if cohesion == "fragmented" else 0)
+              )
+
+              def gen_score(b_val):
+                weights = [
+                    max(0.01, 1.0 - b_val / 2),
+                    max(0.02, 1.5 - b_val / 2.5),
+                    max(0.05, 2.0 - b_val / 3),
+                    max(0.1, b_val / 5),
+                    max(0.15, (b_val / 5) ** 2),
+                ]
+                w = np.array(weights)
+                return int(np.random.choice([1, 2, 3, 4, 5], p=w / w.sum()))
+
+              scores = [
+                  gen_score(base + np.random.normal(0.1, 0.25)),
+                  gen_score(base - (0.4 if cohesion != "clear" else 0)),
+                  gen_score(base + np.random.normal(0.2, 0.3)),
+                  gen_score(4.3 + np.random.normal(0, 0.35)),
+                  gen_score(4.4 + np.random.normal(0, 0.3)),
+                  gen_score(4.5 + np.random.normal(0, 0.2)),
+              ]
+
+              comment = ""
+              if np.random.rand() < 0.25:
+                if energy == "depleted":
+                  comment = np.random.choice(sample_comments["energy"])
+                elif pacing == "rushed":
+                  comment = np.random.choice(sample_comments["pacing"])
+                elif cohesion == "fragmented":
+                  comment = np.random.choice(sample_comments["cohesion"])
+                elif scores[1] <= 2:
+                  comment = np.random.choice(sample_comments["tasks"])
+                elif scores[0] <= 2:
+                  comment = np.random.choice(sample_comments["materials"])
+                elif scores[3] <= 2 or scores[4] <= 2:
+                  comment = np.random.choice(sample_comments["support"])
+                elif scores[5] <= 2:
+                  comment = np.random.choice(sample_comments["platform"])
+                else:
+                  comment = np.random.choice(sample_comments["positive"])
+
+            # Целевое событие: просрочка по ДЗ в след. модуле
+            has_alert = (
+                (pacing == "rushed")
+                or (cohesion == "fragmented")
+                or (energy == "depleted")
+            )
+            p_overdue = 0.38 if has_alert else 0.10
+            has_overdue_next_mod = 1 if np.random.rand() < p_overdue else 0
 
             rows.append({
                 "course_key": c_key,
                 "course_name": c_info["name"],
                 "cohort": cohort,
+                "cohort_size_N": cohort_pop_size,
                 "student_id": s_id,
                 "module_id": mod_id,
                 "pacing_score": pacing,
                 "cohesion_score": cohesion,
                 "energy_score": energy,
-                "legacy_materials": score_materials,
-                "legacy_tasks": score_tasks,
-                "legacy_experts": score_experts,
-                "legacy_support_speed": score_sup_speed,
-                "legacy_support_care": score_sup_care,
-                "legacy_platform": score_platform,
+                "legacy_materials": scores[0],
+                "legacy_tasks": scores[1],
+                "legacy_experts": scores[2],
+                "legacy_support_speed": scores[3],
+                "legacy_support_care": scores[4],
+                "legacy_platform": scores[5],
                 "open_feedback": comment,
+                "has_overdue_next_module": has_overdue_next_mod,
             })
     return pd.DataFrame(rows)
 
 
 df_raw = load_data()
+
+# Расчет признаков шума (Noise Classifier)
+csi_cols = [
+    "legacy_materials",
+    "legacy_tasks",
+    "legacy_experts",
+    "legacy_support_speed",
+    "legacy_support_care",
+    "legacy_platform",
+]
+df_raw["i_straight"] = df_raw[csi_cols].std(axis=1) == 0
+df_raw["i_first_option"] = (
+    (df_raw["pacing_score"] == "rushed")
+    & (df_raw["cohesion_score"] == "clear")
+    & (df_raw["energy_score"] == "high")
+)
+df_raw["i_conflict"] = (
+    (df_raw["energy_score"] == "depleted")
+    | (df_raw["cohesion_score"] == "fragmented")
+) & (df_raw[csi_cols] == 5).all(axis=1)
+df_raw["s_noise"] = (
+    df_raw["i_straight"].astype(int)
+    + df_raw["i_first_option"].astype(int)
+    + df_raw["i_conflict"].astype(int)
+)
+df_raw["is_garbage"] = df_raw["s_noise"] >= 2
 
 # Сайдбар: Фильтры
 st.sidebar.title("🎛 Фильтры анализа")
@@ -212,7 +267,7 @@ selected_cohorts = st.sidebar.multiselect(
     "Выберите потоки (когорты):",
     options=all_cohorts,
     default=all_cohorts,
-    help="Выберите несколько потоков для межпоточного анализа тренда",
+    help="Выберите когорты пилотного запуска для межпоточного анализа",
 )
 
 if not selected_cohorts:
@@ -220,27 +275,40 @@ if not selected_cohorts:
   st.stop()
 
 # Фильтрация по когортам
-df = course_df[course_df["cohort"].isin(selected_cohorts)]
-
-all_modules = sorted(df["module_id"].unique())
+df_course = course_df[course_df["cohort"].isin(selected_cohorts)]
+all_modules = sorted(df_course["module_id"].unique())
 selected_modules = st.sidebar.multiselect(
     "Фильтр модулей:", options=all_modules, default=all_modules
 )
 
-df_filtered = df[df["module_id"].isin(selected_modules)]
+df_base = df_course[df_course["module_id"].isin(selected_modules)]
 
-# Шапка дашборда
-st.title(f"📊 Аналитика здоровья продукта: {selected_course}")
-st.caption(
-    f"Выбрано потоков: **{len(selected_cohorts)}** | Ответов в выборке:"
-    f" **{len(df_filtered)}**"
+# Переключатель очистки данных
+data_clean_mode = st.sidebar.radio(
+    "Фильтрация данных:",
+    ["Все ответы (Raw)", "Только валидные (Clean, без шума)"],
+    help="Исключает анкеты с подозрением на механический проклик (S noise >= 2)",
 )
 
-# Вкладки
-tab1, tab2, tab3 = st.tabs([
+df_filtered = (
+    df_base[~df_base["is_garbage"]]
+    if data_clean_mode.startswith("Только валидные")
+    else df_base
+)
+
+# Шапка
+st.title(f"📊 Аналитика здоровья продукта: {selected_course}")
+st.caption(
+    f"Потоков: **{len(selected_cohorts)}** | Ответов: **{len(df_filtered)}**"
+    f" (Исключено шума: **{len(df_base) - len(df_filtered)}** шт.)"
+)
+
+# Вкладки (4 шт.)
+tab1, tab2, tab3, tab4 = st.tabs([
     "🟢 1. Пульс здоровья (MHI)",
     "🟡 2. Унаследованные метрики (CSI)",
     "🔴 3. Closed-Loop & Вербатим",
+    "🔬 4. Валидация пилота (Эксперимент MVP)",
 ])
 
 # ==========================================
@@ -371,7 +439,7 @@ with tab1:
     st.divider()
     st.markdown("##### 📈 Межпоточный тренд: Динамика алертов по когортам")
     cohort_trend = (
-        df.groupby("cohort")
+        df_filtered.groupby("cohort")
         .apply(
             lambda x: pd.Series({
                 "Спешка (Rushed %)": (x["pacing_score"] == "rushed").mean()
@@ -513,7 +581,7 @@ with tab2:
     st.plotly_chart(fig_leg, use_container_width=True)
 
   with col_pivot:
-    st.markdown(f"**Pivot-таблица распределения по модулям (%):**")
+    st.markdown("**Pivot-таблица распределения по модулям (%):**")
     pivot_table = pd.pivot_table(
         df_filtered,
         index="module_id",
@@ -616,4 +684,202 @@ with tab3:
           }
       ),
       use_container_width=True,
+  )
+
+# =========================================================================
+# ВКЛАДКА 4: ВАЛИДАЦИЯ ПИЛОТА (ЭКСПЕРИМЕНТ MVP — ОПЦИОНАЛЬНЫЙ СЛОЙ)
+# =========================================================================
+with tab4:
+  st.subheader("🔬 Мета-аналитика и валидация пилотного эксперимента")
+  st.info(
+      "ℹ️ **Опциональный аналитический слой (MVP):** Данная вкладка"
+      " предназначена для CPO, лида аналитики и владельца продукта для"
+      " подведения итогов пилотного запуска на 5 потоках. Оценивает надежность"
+      " данных (GRR, MoE) и прогностическую ценность инструмента перед"
+      " масштабированием на 100% курсов."
+  )
+
+  # Расчет параметров эксперимента по выборке df_base (до фильтрации)
+  total_n_raw = len(df_base)
+  garbage_n = df_base["is_garbage"].sum()
+  grr_val = (garbage_n / total_n_raw * 100) if total_n_raw else 0.0
+
+  # Чистый объем выборки (n) и генеральная совокупность (N)
+  clean_df = df_base[~df_base["is_garbage"]]
+  n_clean = len(clean_df)
+  # Популяция = количество модулей * размер когорты
+  n_mods = df_base["module_id"].nunique()
+  n_cohorts = df_base["cohort"].nunique()
+  N_pop = int(120 * n_mods * n_cohorts)
+
+  # MoE формула
+  Z = 1.96
+  p = 0.5
+  if n_clean > 0 and N_pop > n_clean:
+    moe_val = (
+        Z
+        * np.sqrt((p * (1 - p)) / n_clean)
+        * np.sqrt((N_pop - n_clean) / (N_pop - 1))
+        * 100
+    )
+  elif n_clean > 0:
+    moe_val = Z * np.sqrt((p * (1 - p)) / n_clean) * 100
+  else:
+    moe_val = 100.0
+
+  # Относительный риск (RR overdue)
+  alert_mask = (
+      (clean_df["pacing_score"] == "rushed")
+      | (clean_df["cohesion_score"] == "fragmented")
+      | (clean_df["energy_score"] == "depleted")
+  )
+  alert_grp = clean_df[alert_mask]
+  base_grp = clean_df[~alert_mask]
+
+  risk_alert = (
+      alert_grp["has_overdue_next_module"].mean() if len(alert_grp) > 0 else 0.0
+  )
+  risk_base = (
+      base_grp["has_overdue_next_module"].mean() if len(base_grp) > 0 else 0.0
+  )
+  rr_val = (risk_alert / risk_base) if risk_base > 0 else 0.0
+
+  # Итоговый вердикт (Decision Gate)
+  is_grr_ok = grr_val < 15.0
+  is_moe_ok = moe_val < 7.0
+  is_rr_ok = rr_val >= 2.5
+
+  if is_grr_ok and is_moe_ok and is_rr_ok:
+    verdict_text = "🟢 УСПЕХ: Все критерии выполнены — готовность к масштабированию на 100% курсов"
+    verdict_color = "success"
+  elif grr_val > 30.0 or moe_val > 12.0 or rr_val < 1.5:
+    verdict_text = (
+        "🔴 ПРОВАЛ: Критические отклонения — требуется пересмотр концепции"
+    )
+    verdict_color = "error"
+  else:
+    verdict_text = (
+        "🟡 ДОРАБОТКА: Требуются точечные UX-корректировки перед раскаткой"
+    )
+    verdict_color = "warning"
+
+  if verdict_color == "success":
+    st.success(f"### Итоговый вердикт эксперимента: {verdict_text}")
+  elif verdict_color == "warning":
+    st.warning(f"### Итоговый вердикт эксперимента: {verdict_text}")
+  else:
+    st.error(f"### Итоговый вердикт эксперимента: {verdict_text}")
+
+  st.divider()
+
+  # Карточки трех ключевых метрик эксперимента
+  st.markdown("##### 📊 Ключевые показатели надежности и ценности пилота")
+  ec1, ec2, ec3 = st.columns(3)
+
+  ec1.metric(
+      "1. Garbage Response Rate (GRR)",
+      f"{grr_val:.1f}%",
+      delta="Цель < 15% (Безопасность)",
+      delta_color="normal" if grr_val < 15 else "inverse",
+  )
+  ec2.metric(
+      "2. Margin of Error (MoE)",
+      f"±{moe_val:.1f}%",
+      delta="Цель < 7% (Достоверность)",
+      delta_color="normal" if moe_val < 7 else "inverse",
+  )
+  ec3.metric(
+      "3. Относительный риск долгов (RR)",
+      f"{rr_val:.2f}x",
+      delta="Цель ≥ 2.5x (Ценность MHI)",
+      delta_color="normal" if rr_val >= 2.5 else "inverse",
+  )
+
+  st.divider()
+
+  # Детализация метрик
+  col_grr_detail, col_rr_detail = st.columns(2)
+
+  with col_grr_detail:
+    st.markdown("###### 🔍 Анализ структуры шума (Детекция прокликов)")
+    noise_breakdown = pd.DataFrame({
+        "Индикатор": [
+            "Straightlining (Монотонные CSI 5-5-5 или 1-1-1)",
+            "First-Option Bias (Только 1-е плашки MHI)",
+            "Logic Conflict (Алерт MHI + CSI 5/5)",
+        ],
+        "Доля анкет (%)": [
+            df_base["i_straight"].mean() * 100,
+            df_base["i_first_option"].mean() * 100,
+            df_base["i_conflict"].mean() * 100,
+        ],
+    })
+    fig_noise = px.bar(
+        noise_breakdown,
+        x="Доля анкет (%)",
+        y="Индикатор",
+        orientation="h",
+        text=noise_breakdown["Доля анкет (%)"].apply(lambda v: f"{v:.1f}%"),
+        color="Индикатор",
+        color_discrete_sequence=["#F57C00", "#D32F2F", "#7B1FA2"],
+    )
+    fig_noise.update_layout(
+        showlegend=False, height=260, margin=dict(l=10, r=10, t=20, b=20)
+    )
+    st.plotly_chart(fig_noise, use_container_width=True)
+    st.caption(
+        f"Всего отфильтровано как мусор ($S_{{noise}} \ge 2$): **{garbage_n}**"
+        f" из **{total_n_raw}** анкет ({grr_val:.1f}%)."
+    )
+
+  with col_rr_detail:
+    st.markdown("###### 🎯 Прогностическая сила MHI: Доля должников по группам")
+    risk_compare = pd.DataFrame({
+        "Группа студентов": [
+            "Группа алертов MHI (Спешка/Разрыв/Истощение)",
+            "Базовая группа (MHI в норме)",
+        ],
+        "Доля должников в след. модуле (%)": [
+            risk_alert * 100,
+            risk_base * 100,
+        ],
+    })
+    fig_rr = px.bar(
+        risk_compare,
+        x="Группа студентов",
+        y="Доля должников в след. модуле (%)",
+        text=risk_compare["Доля должников в след. модуле (%)"].apply(
+            lambda v: f"{v:.1f}%"
+        ),
+        color="Группа студентов",
+        color_discrete_map={
+            "Группа алертов MHI (Спешка/Разрыв/Истощение)": "#D32F2F",
+            "Базовая группа (MHI в норме)": "#388E3C",
+        },
+    )
+    fig_rr.update_layout(
+        showlegend=False, height=260, margin=dict(l=10, r=10, t=20, b=20)
+    )
+    st.plotly_chart(fig_rr, use_container_width=True)
+    st.caption(
+        f"Студенты с алертом MHI получают долги в **{rr_val:.1f} раза чаще**"
+        " базовой группы."
+    )
+
+  st.divider()
+
+  # Справочная матрица решений
+  st.markdown("###### 📋 Регламент принятия решений по масштабированию пилота")
+  st.table(
+      pd.DataFrame({
+          "Сценарий": ["🟢 Успех", "🟡 Доработка", "🔴 Провал"],
+          "Безопасность (GRR)": ["GRR < 15%", "GRR 15–30%", "GRR > 30%"],
+          "Достоверность (MoE)": ["MoE < 7%", "MoE 7–12%", "MoE > 12%"],
+          "Ценность (RR overdue)": ["RR ≥ 2.5", "RR 2.0–2.5", "RR < 1.5"],
+          "Управленческое решение": [
+              "Масштабирование на 100% курсов, отключение старого CSAT",
+              "UX-полировка интерфейса, случайная ротация плашек",
+              "Снятие блокирующего экрана, переход к сэмплированию",
+          ],
+      })
   )
