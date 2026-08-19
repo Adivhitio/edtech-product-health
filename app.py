@@ -1,325 +1,417 @@
-import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
-# Настройки страницы
-st.set_page_config(page_title="Product Health Dashboard", page_icon="📊", layout="wide")
+st.set_page_config(
+    page_title="Дашборд: Пульс Модуля & CSAT", page_icon="📊", layout="wide"
+)
 
-# -------------------------------------------------------------
-# Функция автоматической генерации синтетического датасета
-# (Работает прямо в облаке Streamlit)
-# -------------------------------------------------------------
-def generate_synthetic_data():
-    np.random.seed(42)
-    n_students = 200
-    student_ids = [f'STU_{1000 + i}' for i in range(1, n_students + 1)]
-    modules = [f'MOD_0{i}' for i in range(1, 7)]
 
-    comments_pool = [
-        "", "", "", "", "", "",
-        "Очень понравился практический разбор в этом модуле!",
-        "Слишком много теории, не успеваю за дедлайнами.",
-        "Не хватило разбора типовых ошибок в домашнем задании.",
-        "Спикер отлично объясняет сложные темы, спасибо!",
-        "Трудные практические кейсы, долго разбирался с тренажером.",
-        "Платформа иногда зависала при отправке решений.",
-        "Тьютор оперативно помог в чате, очень ценно."
-    ]
-
-    data = []
-    for student in student_ids:
-        student_resilience = np.random.choice(['high', 'medium', 'low'], p=[0.3, 0.5, 0.2])
-        
-        for mod_idx, mod in enumerate(modules):
-            # 1. Core Pulse
-            if mod in ['MOD_03', 'MOD_04']:
-                pacing_p = [0.45, 0.50, 0.05] if student_resilience != 'low' else [0.65, 0.30, 0.05]
-            else:
-                pacing_p = [0.20, 0.75, 0.05]
-                
-            if mod in ['MOD_04', 'MOD_05']:
-                cohesion_p = [0.60, 0.30, 0.10]
-            else:
-                cohesion_p = [0.80, 0.15, 0.05]
-                
-            if mod_idx >= 3:
-                energy_p = [0.25, 0.45, 0.30] if student_resilience == 'low' else [0.40, 0.45, 0.15]
-            else:
-                energy_p = [0.65, 0.30, 0.05]
-                
-            pacing = np.random.choice(['rushed', 'optimal', 'slow'], p=pacing_p)
-            cohesion = np.random.choice(['clear', 'confused', 'fragmented'], p=cohesion_p)
-            energy = np.random.choice(['high', 'moderate', 'depleted'], p=energy_p)
-            
-            # 2. Legacy CSAT (1-5)
-            base_mean = 4.5 if student_resilience == 'high' else (4.1 if student_resilience == 'medium' else 3.6)
-            if cohesion == 'fragmented':
-                base_mean -= 0.7
-                
-            legacy_speaker = int(np.clip(np.random.normal(base_mean, 0.6), 1, 5))
-            legacy_platform = int(np.clip(np.random.normal(4.3, 0.6), 1, 5))
-            legacy_homework = int(np.clip(np.random.normal(base_mean - 0.2, 0.8), 1, 5))
-            legacy_materials = int(np.clip(np.random.normal(base_mean, 0.6), 1, 5))
-            legacy_support = int(np.clip(np.random.normal(4.4, 0.7), 1, 5))
-            
-            open_text = np.random.choice(comments_pool)
-            
-            data.append({
-                'student_id': student,
-                'module_id': mod,
-                'pacing_score': pacing,
-                'cohesion_score': cohesion,
-                'energy_score': energy,
-                'legacy_speaker': legacy_speaker,
-                'legacy_platform': legacy_platform,
-                'legacy_homework': legacy_homework,
-                'legacy_materials': legacy_materials,
-                'legacy_support': legacy_support,
-                'open_feedback_text': open_text
-            })
-
-    return pd.DataFrame(data)
-
-# Загрузка данных с автогенерацией
+# Загрузка данных
 @st.cache_data
 def load_data():
-    try:
-        df = pd.read_csv('pulse_6_modules_clean.csv')
-        if 'legacy_speaker' not in df.columns:
-            df = generate_synthetic_data()
-    except FileNotFoundError:
-        df = generate_synthetic_data()
-    return df
+  return pd.read_csv("pulse_multi_course_data.csv")
 
-df = load_data()
 
-# Функция расчета процентов для атомарных вопросов
-def get_pct_data(data_df, score_col):
-    grouped = data_df.groupby(['module_id', score_col]).size().reset_index(name='count')
-    grouped['total'] = grouped.groupby('module_id')['count'].transform('sum')
-    grouped['percentage'] = (grouped['count'] / grouped['total'] * 100).round(1)
-    return grouped
+df_raw = load_data()
 
-if not df.empty:
-    st.title("📊 Дашборд здоровья продукта (Hybrid MVP v1.0)")
-    st.caption("Единый аналитический контур: Атомарный Пульс + Legacy CSAT + Closed-Loop")
+# Сайдбар: Фильтры
+st.sidebar.title("🎛 Фильтры анализа")
 
-    # Боковая панель
-    st.sidebar.header("Фильтры")
-    selected_modules = st.sidebar.multiselect(
-        "Выберите модули:",
-        options=df['module_id'].unique(),
-        default=df['module_id'].unique()
+course_list = df_raw["course_name"].unique()
+selected_course = st.sidebar.selectbox("Выберите курс:", course_list)
+
+course_df = df_raw[df_raw["course_name"] == selected_course]
+all_cohorts = sorted(course_df["cohort"].unique())
+
+selected_cohorts = st.sidebar.multiselect(
+    "Выберите потоки (когорты):",
+    options=all_cohorts,
+    default=all_cohorts,
+    help="Выберите несколько потоков для межпоточного анализа тренда",
+)
+
+if not selected_cohorts:
+  st.warning("Пожалуйста, выберите хотя бы один поток в сайдбаре.")
+  st.stop()
+
+# Фильтрация по выбранным когортам
+df = course_df[course_df["cohort"].isin(selected_cohorts)]
+
+all_modules = sorted(df["module_id"].unique())
+selected_modules = st.sidebar.multiselect(
+    "Фильтр модулей:", options=all_modules, default=all_modules
+)
+
+df_filtered = df[df["module_id"].isin(selected_modules)]
+
+# Заголовок
+st.title(f"📊 Аналитика здоровья продукта: {selected_course}")
+st.caption(
+    f"Выбрано потоков: **{len(selected_cohorts)}** | Ответов в выборке:"
+    f" **{len(df_filtered)}**"
+)
+
+# Три целевые вкладки
+tab1, tab2, tab3 = st.tabs([
+    "🟢 1. Пульс здоровья (MHI)",
+    "🟡 2. Legacy CSAT & Детализация",
+    "🔴 3. Closed-Loop & Вербатим",
+])
+
+# ==========================================
+# ВКЛАДКА 1: ПУЛЬС ЗДОРОВЬЯ (MHI)
+# ==========================================
+with tab1:
+  st.subheader("Метрики состояния студентов (Module Health Index)")
+
+  # Расчет KPI
+  total_resp = len(df_filtered)
+  pct_rushed = (
+      (df_filtered["pacing_score"] == "rushed").sum() / total_resp * 100
+      if total_resp
+      else 0
+  )
+  pct_frag = (
+      (df_filtered["cohesion_score"] == "fragmented").sum() / total_resp * 100
+      if total_resp
+      else 0
+  )
+  pct_depleted = (
+      (df_filtered["energy_score"] == "depleted").sum() / total_resp * 100
+      if total_resp
+      else 0
+  )
+
+  # MHI Rate (% студентов без единого критического сигнала)
+  clean_health = (
+      (df_filtered["pacing_score"] != "rushed")
+      & (df_filtered["cohesion_score"] != "fragmented")
+      & (df_filtered["energy_score"] != "depleted")
+  ).sum()
+  mhi_rate = (clean_health / total_resp * 100) if total_resp else 0
+
+  kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+  kpi1.metric(
+      "MHI Rate (В норме)",
+      f"{mhi_rate:.1f}%",
+      delta="Цель > 75%",
+      delta_color="normal" if mhi_rate >= 75 else "inverse",
+  )
+  kpi2.metric(
+      "Pacing Alert (Спешка)",
+      f"{pct_rushed:.1f}%",
+      delta="Порог 25%",
+      delta_color="inverse" if pct_rushed > 25 else "normal",
+  )
+  kpi3.metric(
+      "Cohesion Deficit (Разрыв)",
+      f"{pct_frag:.1f}%",
+      delta="Порог 15%",
+      delta_color="inverse" if pct_frag > 15 else "normal",
+  )
+  kpi4.metric(
+      "Energy Depleted (Истощение)",
+      f"{pct_depleted:.1f}%",
+      delta="Порог 20%",
+      delta_color="inverse" if pct_depleted > 20 else "normal",
+  )
+
+  st.divider()
+
+  # Графики 100% Stacked Bar по 3 вопросам
+  st.markdown("##### 📌 Распределение ответов по модулям")
+  c1, c2, c3 = st.columns(3)
+
+  def build_stacked_chart(df_in, col, cat_order, color_map, title):
+    ct = (
+        pd.crosstab(df_in["module_id"], df_in[col], normalize="index") * 100
+    ).reset_index()
+    for cat in cat_order:
+      if cat not in ct.columns:
+        ct[cat] = 0.0
+    melted = ct.melt(
+        id_vars=["module_id"],
+        value_vars=cat_order,
+        var_name="Ответ",
+        value_name="Процент",
     )
-    filtered_df = df[df['module_id'].isin(selected_modules)]
+    fig = px.bar(
+        melted,
+        x="module_id",
+        y="Процент",
+        color="Ответ",
+        color_discrete_map=color_map,
+        category_orders={"Ответ": cat_order},
+        title=title,
+        text=melted["Процент"].apply(lambda v: f"{v:.0f}%" if v > 5 else ""),
+    )
+    fig.update_layout(
+        barmode="stack",
+        yaxis_title="%",
+        xaxis_title="",
+        legend_title="",
+        height=340,
+        margin=dict(l=20, r=20, t=40, b=20),
+    )
+    return fig
 
-    # Расчет Churn Risk
-    df_sorted = df.sort_values(['student_id', 'module_id'])
-    churn_alert_students = set()
-    
-    for student_id, group in df_sorted.groupby('student_id'):
-        energies = group['energy_score'].tolist()
-        cohesions = group['cohesion_score'].tolist()
-        min_legacy = group[['legacy_speaker', 'legacy_homework', 'legacy_materials']].min(axis=1).tolist()
-        
-        for i in range(len(energies)):
-            if i < len(energies) - 1 and energies[i] == 'depleted' and energies[i+1] == 'depleted':
-                churn_alert_students.add(student_id)
-            if cohesions[i] == 'fragmented' and min_legacy[i] <= 2:
-                churn_alert_students.add(student_id)
+  with c1:
+    fig_pacing = build_stacked_chart(
+        df_filtered,
+        "pacing_score",
+        ["slow", "optimal", "rushed"],
+        {"rushed": "#D32F2F", "optimal": "#388E3C", "slow": "#FBC02D"},
+        "Ритм и спешка (Pacing)",
+    )
+    st.plotly_chart(fig_pacing, use_container_width=True)
 
-    # 3 ВКЛАДКИ
-    tab1, tab2, tab3 = st.tabs([
-        "🟢 Вкладка 1: Пульс Здоровья (Core)", 
-        "🟡 Вкладка 2: Legacy CSAT & Структура", 
-        "🔴 Вкладка 3: Closed-Loop & Вербатим"
-    ])
+  with c2:
+    fig_cohesion = build_stacked_chart(
+        df_filtered,
+        "cohesion_score",
+        ["fragmented", "confused", "clear"],
+        {"fragmented": "#D32F2F", "confused": "#FBC02D", "clear": "#388E3C"},
+        "Связность и логика (Cohesion)",
+    )
+    st.plotly_chart(fig_cohesion, use_container_width=True)
 
-    # ==========================================
-    # ВКЛАДКА 1: ПУЛЬС ЗДОРОВЬЯ ПРОДУКТА
-    # ==========================================
-    with tab1:
-        st.subheader("Ключевые опережающие индикаторы (Leading Indicators)")
-        c1, c2, c3, c4 = st.columns(4)
-        
-        total = len(filtered_df)
-        rushed = (len(filtered_df[filtered_df['pacing_score'] == 'rushed']) / total * 100) if total > 0 else 0
-        fragmented = (len(filtered_df[filtered_df['cohesion_score'] == 'fragmented']) / total * 100) if total > 0 else 0
-        depleted = (len(filtered_df[filtered_df['energy_score'] == 'depleted']) / total * 100) if total > 0 else 0
+  with c3:
+    fig_energy = build_stacked_chart(
+        df_filtered,
+        "energy_score",
+        ["depleted", "moderate", "high"],
+        {"depleted": "#D32F2F", "moderate": "#FBC02D", "high": "#388E3C"},
+        "Ресурс и энергия (Energy)",
+    )
+    st.plotly_chart(fig_energy, use_container_width=True)
 
-        c1.metric("1. Ритм: Спешка (Rushed)", f"{rushed:.1f}%", "🔴 Alert (>25%)" if rushed > 25 else "🟢 Норма", delta_color="inverse")
-        c2.metric("2. Логика: Дефицит (Fragmented)", f"{fragmented:.1f}%", "🔴 Alert (>15%)" if fragmented > 15 else "🟢 Норма", delta_color="inverse")
-        c3.metric("3. Ресурс: Истощение (Depleted)", f"{depleted:.1f}%", "Уровень усталости")
-        c4.metric("Risk Alerts (Отток)", f"{len(churn_alert_students)} чел.", "Требуют контакта", delta_color="off")
-
-        st.markdown("---")
-        st.subheader("Распределение 3 атомарных сигналов по модулям (%)")
-        col_q1, col_q2, col_q3 = st.columns(3)
-
-        with col_q1:
-            st.markdown("**1. Ритм и Темп (Pacing)**")
-            p_data = get_pct_data(filtered_df, 'pacing_score')
-            fig_p = px.bar(
-                p_data, x='module_id', y='percentage', color='pacing_score',
-                color_discrete_map={'rushed': '#EF553B', 'optimal': '#00CC96', 'slow': '#AB63FA'},
-                labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'pacing_score': 'Ответ'},
-                hover_data={'count': True, 'percentage': ':.1f%'}
-            )
-            fig_p.update_yaxes(ticksuffix="%")
-            st.plotly_chart(fig_p, use_container_width=True)
-
-        with col_q2:
-            st.markdown("**2. Связность и Логика (Cohesion)**")
-            c_data = get_pct_data(filtered_df, 'cohesion_score')
-            fig_c = px.bar(
-                c_data, x='module_id', y='percentage', color='cohesion_score',
-                color_discrete_map={'clear': '#00CC96', 'confused': '#FFA15A', 'fragmented': '#EF553B'},
-                labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'cohesion_score': 'Ответ'},
-                hover_data={'count': True, 'percentage': ':.1f%'}
-            )
-            fig_c.update_yaxes(ticksuffix="%")
-            st.plotly_chart(fig_c, use_container_width=True)
-
-        with col_q3:
-            st.markdown("**3. Состояние ресурса (Energy)**")
-            e_data = get_pct_data(filtered_df, 'energy_score')
-            fig_e = px.bar(
-                e_data, x='module_id', y='percentage', color='energy_score',
-                color_discrete_map={'high': '#00CC96', 'moderate': '#FFA15A', 'depleted': '#EF553B'},
-                labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'energy_score': 'Ответ'},
-                hover_data={'count': True, 'percentage': ':.1f%'}
-            )
-            fig_e.update_yaxes(ticksuffix="%")
-            st.plotly_chart(fig_e, use_container_width=True)
-
-    # ==========================================
-    # ВКЛАДКА 2: LEGACY CSAT & ДЕТАЛИЗАЦИЯ
-    # ==========================================
-    with tab2:
-        st.subheader("🟡 Наследуемые оценки CSAT (Шкала 1–5): Распределения и Фокусный анализ")
-        st.caption("Анализ структурного распределения (Top-2 Box, Bottom-2 Box) вместо слепого доверия среднему балу.")
-
-        segment_filter = st.radio(
-            "Срез когорты для анализа:",
-            ["Все студенты", "Только с историей спешки (Rushed)", "Только в состоянии истощения (Depleted)"],
-            horizontal=True
+  # Межпоточный анализ тренда (если выбрано >1 когорты)
+  if len(selected_cohorts) > 1:
+    st.divider()
+    st.markdown("##### 📈 Межпоточный тренд: Доля алертов по когортам")
+    cohort_trend = (
+        df.groupby("cohort")
+        .apply(
+            lambda x: pd.Series({
+                "Спешка (Rushed %)": (x["pacing_score"] == "rushed").mean()
+                * 100,
+                "Разрыв логики (Frag %)": (
+                    x["cohesion_score"] == "fragmented"
+                ).mean()
+                * 100,
+                "Истощение (Depleted %)": (
+                    x["energy_score"] == "depleted"
+                ).mean()
+                * 100,
+            }),
+            include_groups=False,
         )
+        .reset_index()
+    )
 
-        df_legacy = filtered_df.copy()
-        if segment_filter == "Только с историей спешки (Rushed)":
-            df_legacy = df_legacy[df_legacy['pacing_score'] == 'rushed']
-        elif segment_filter == "Только в состоянии истощения (Depleted)":
-            df_legacy = df_legacy[df_legacy['energy_score'] == 'depleted']
+    fig_trend = px.line(
+        cohort_trend,
+        x="cohort",
+        y=[
+            "Спешка (Rushed %)",
+            "Разрыв логики (Frag %)",
+            "Истощение (Depleted %)",
+        ],
+        markers=True,
+        color_discrete_map={
+            "Спешка (Rushed %)": "#F57C00",
+            "Разрыв логики (Frag %)": "#D32F2F",
+            "Истощение (Depleted %)": "#7B1FA2",
+        },
+    )
+    fig_trend.update_layout(
+        height=320,
+        yaxis_title="%",
+        xaxis_title="Когорта",
+        legend_title="Метрика",
+    )
+    st.plotly_chart(fig_trend, use_container_width=True)
 
-        legacy_cols_map = {
-            'legacy_speaker': 'Спикер',
-            'legacy_platform': 'Платформа', 
-            'legacy_homework': 'Домашнее задание', 
-            'legacy_materials': 'Материалы', 
-            'legacy_support': 'Служба поддержки'
-        }
+# ==========================================
+# ВКЛАДКА 2: LEGACY CSAT & ДЕТАЛИЗАЦИЯ
+# ==========================================
+with tab2:
+  st.subheader("Унаследованные метрики (1–5) и структурный анализ")
 
-        # 1. Общий структурный обзор по всем вопросам
-        summary_rows = []
-        for col_id, col_name in legacy_cols_map.items():
-            if len(df_legacy) > 0:
-                mean_val = df_legacy[col_id].mean()
-                median_val = df_legacy[col_id].median()
-                top2_pct = (df_legacy[col_id].isin([4, 5]).sum() / len(df_legacy)) * 100
-                bot2_pct = (df_legacy[col_id].isin([1, 2]).sum() / len(df_legacy)) * 100
-            else:
-                mean_val, median_val, top2_pct, bot2_pct = 0, 0, 0, 0
-                
-            summary_rows.append({
-                'Вопрос': col_name,
-                'Средний балл': round(mean_val, 2),
-                'Медиана': int(median_val) if len(df_legacy) > 0 else 0,
-                'Top-2 Box (% оценок 4-5)': f"{top2_pct:.1f}%",
-                'Bottom-2 Box (% оценок 1-2)': f"{bot2_pct:.1f}%"
-            })
-        
-        summary_df = pd.DataFrame(summary_rows)
+  legacy_map = {
+      "legacy_speaker": "Спикер / Эксперт",
+      "legacy_hw": "Домашние задания / Практика",
+      "legacy_platform": "Удобство платформы (LMS)",
+      "legacy_support": "Служба поддержки / Сопровождение",
+  }
 
-        st.markdown("### 1. Общий обзор унаследованных вопросов")
-        st.dataframe(summary_df, use_container_width=True)
+  # Сводная таблица Top-2 / Bottom-2 Box
+  summary_rows = []
+  for col, name in legacy_map.items():
+    s = df_filtered[col]
+    top2 = (s >= 4).mean() * 100
+    bot2 = (s <= 2).mean() * 100
+    mean_val = s.mean()
+    med_val = s.median()
+    summary_rows.append({
+        "Показатель": name,
+        "Top-2 Box (4–5)": f"{top2:.1f}%",
+        "Bottom-2 Box (1–2)": f"{bot2:.1f}%",
+        "Среднее (1–5)": f"{mean_val:.2f}",
+        "Медиана": f"{med_val:.1f}",
+        "Статус": (
+            "🔴 Критично"
+            if bot2 > 15
+            else ("🟡 Требует внимания" if top2 < 75 else "🟢 Норма")
+        ),
+    })
 
-        st.markdown("---")
+  st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
 
-        # 2. ФОКУСНЫЙ АНАЛИЗ ОТДЕЛЬНОГО ВОПРОСА
-        st.markdown("### 2. 🔍 Фокусный анализ конкретного вопроса")
-        selected_q_name = st.selectbox(
-            "Выберите вопрос для детального разбора распределения оценок:",
-            options=list(legacy_cols_map.values())
+  st.divider()
+
+  # Deep-Dive Селектор конкретного вопроса
+  st.markdown("##### 🔍 Фокусный Deep-Dive по конкретному вопросу")
+  focus_col_name = st.selectbox(
+      "Выберите параметр для детального анализа распределения:",
+      list(legacy_map.values()),
+  )
+  focus_col = [k for k, v in legacy_map.items() if v == focus_col_name][0]
+
+  col_chart, col_pivot = st.columns([3, 2])
+
+  with col_chart:
+    # 100% Stacked Bar для оценок 1-5
+    ct_leg = (
+        pd.crosstab(
+            df_filtered["module_id"], df_filtered[focus_col], normalize="index"
         )
-        
-        selected_q_id = [k for k, v in legacy_cols_map.items() if v == selected_q_name][0]
+        * 100
+    ).reset_index()
+    for grade in [1, 2, 3, 4, 5]:
+      if grade not in ct_leg.columns:
+        ct_leg[grade] = 0.0
+    melted_leg = ct_leg.melt(
+        id_vars=["module_id"],
+        value_vars=[1, 2, 3, 4, 5],
+        var_name="Оценка",
+        value_name="Доля",
+    )
+    grade_colors = {
+        1: "#D32F2F",
+        2: "#F57C00",
+        3: "#FBC02D",
+        4: "#689F38",
+        5: "#2E7D32",
+    }
 
-        q_module_data = []
-        for mod_id in df_legacy['module_id'].unique():
-            mod_sub = df_legacy[df_legacy['module_id'] == mod_id]
-            tot = len(mod_sub)
-            for score in [1, 2, 3, 4, 5]:
-                sc_count = (mod_sub[selected_q_id] == score).sum()
-                sc_pct = (sc_count / tot * 100) if tot > 0 else 0
-                q_module_data.append({
-                    'module_id': mod_id,
-                    'score': str(score),
-                    'count': sc_count,
-                    'percentage': round(sc_pct, 1)
-                })
+    fig_leg = px.bar(
+        melted_leg,
+        x="module_id",
+        y="Доля",
+        color="Оценка",
+        color_discrete_map=grade_colors,
+        category_orders={"Оценка": [1, 2, 3, 4, 5]},
+        title=f"Распределение оценок (1–5): {focus_col_name}",
+        text=melted_leg["Доля"].apply(
+            lambda v: f"{v:.0f}%" if v >= 6 else ""
+        ),
+    )
+    fig_leg.update_layout(
+        barmode="stack",
+        yaxis_title="%",
+        xaxis_title="",
+        height=360,
+        margin=dict(l=20, r=20, t=40, b=20),
+    )
+    st.plotly_chart(fig_leg, use_container_width=True)
 
-        q_df = pd.DataFrame(q_module_data)
+  with col_pivot:
+    st.markdown(f"**Pivot-таблица по модулям ({focus_col_name}):**")
+    pivot_table = pd.pivot_table(
+        df_filtered,
+        index="module_id",
+        columns=focus_col,
+        aggfunc="size",
+        fill_value=0,
+    )
+    pivot_pct = pivot_table.div(pivot_table.sum(axis=1), axis=0) * 100
+    st.dataframe(pivot_pct.style.format("{:.1f}%"), use_container_width=True)
 
-        col_f1, col_f2 = st.columns([6, 4])
+# ==========================================
+# ВКЛАДКА 3: CLOSED-LOOP & ВЕРБАТИМ
+# ==========================================
+with tab3:
+  st.subheader("Операционный контур реагирования (Closed-Loop)")
 
-        with col_f1:
-            st.markdown(f"**Распределение всех оценок (1–5) по модулям: «{selected_q_name}»**")
-            color_map_scores = {
-                '1': '#D32F2F', # Красный
-                '2': '#F57C00', # Оранжевый
-                '3': '#FBC02D', # Желтый
-                '4': '#388E3C', # Светло-зеленый
-                '5': '#1B5E20'  # Темно-зеленый
+  # Формирование списка Churn Risk
+  churn_condition = (df_filtered["energy_score"] == "depleted") & (
+      (df_filtered["pacing_score"] == "rushed")
+      | (df_filtered["cohesion_score"] == "fragmented")
+      | (df_filtered["legacy_hw"] <= 2)
+  )
+
+  df_alerts = df_filtered[churn_condition][
+      ["cohort", "student_id", "module_id", "energy_score", "pacing_score", "cohesion_score", "legacy_hw", "open_feedback"]
+  ].copy()
+
+  st.markdown(
+      f"##### 🚨 Реестр студентов в зоне высокого риска оттока ({len(df_alerts)} чел.)"
+  )
+  st.caption(
+      "Критерий алерта: Сильное истощение (depleted) + спешка / дефицит логики /"
+      " низкая оценка практики."
+  )
+
+  if not df_alerts.empty:
+    st.dataframe(
+        df_alerts.rename(
+            columns={
+                "cohort": "Поток",
+                "student_id": "ID Студента",
+                "module_id": "Модуль",
+                "energy_score": "Ресурс",
+                "pacing_score": "Ритм",
+                "cohesion_score": "Связность",
+                "legacy_hw": "Оценка ДЗ",
+                "open_feedback": "Комментарий",
             }
-            fig_q_dist = px.bar(
-                q_df, x='module_id', y='percentage', color='score',
-                color_discrete_map=color_map_scores,
-                labels={'module_id': 'Модуль', 'percentage': 'Доля (%)', 'score': 'Оценка'},
-                hover_data={'count': True, 'percentage': ':.1f%'}
-            )
-            fig_q_dist.update_yaxes(ticksuffix="%")
-            st.plotly_chart(fig_q_dist, use_container_width=True)
+        ),
+        use_container_width=True,
+    )
+  else:
+    st.success("Критических алертов не обнаружено.")
 
-        with col_f2:
-            st.markdown(f"**Доли оценок (%) по модулям: «{selected_q_name}»**")
-            piv_table = q_df.pivot(index='module_id', columns='score', values='percentage').fillna(0)
-            piv_table.columns = [f"Оценка {col} (%)" for col in piv_table.columns]
-            st.dataframe(piv_table, use_container_width=True)
+  st.divider()
 
-    # ==========================================
-    # ВКЛАДКА 3: CLOSED-LOOP & ВЕРБАТИМ
-    # ==========================================
-    with tab3:
-        st.subheader("🚨 Рабочее место тьютора / Службы заботы")
-        
-        col_risk, col_verb = st.columns([5, 5])
+  # Таблица открытых отзывов
+  st.markdown("##### 💬 Лента открытых комментариев")
+  feedback_df = df_filtered[
+      df_filtered["open_feedback"].str.len() > 0
+  ][["cohort", "module_id", "student_id", "open_feedback", "energy_score", "pacing_score"]]
 
-        with col_risk:
-            st.markdown("**Реестр алертов Churn Risk**")
-            st.caption("Студенты, сработавшие по Правилу 1 (2x Depleted) или Правилу 2 (Fragmented + CSAT <= 2):")
-            
-            churn_records = df[df['student_id'].isin(churn_alert_students)][
-                ['student_id', 'module_id', 'energy_score', 'cohesion_score', 'legacy_homework']
-            ]
-            st.dataframe(churn_records.sort_values(['student_id', 'module_id']), use_container_width=True, height=400)
+  search_term = st.text_input(
+      "Поиск по ключевым словам в комментариях:",
+      placeholder="Например: звук, дедлайн, каша, практика...",
+  )
+  if search_term:
+    feedback_df = feedback_df[
+        feedback_df["open_feedback"].str.contains(search_term, case=False, na=False)
+    ]
 
-        with col_verb:
-            st.markdown("**Лента текстовых отзывов (Open Verbatim)**")
-            show_non_empty = st.checkbox("Показывать только заполненные отзывы", value=True)
-            
-            comments_df = filtered_df[['student_id', 'module_id', 'energy_score', 'open_feedback_text']]
-            if show_non_empty:
-                comments_df = comments_df[comments_df['open_feedback_text'].str.strip() != ""]
-                
-            st.dataframe(comments_df.sort_values('module_id', ascending=False), use_container_width=True, height=400)
+  st.dataframe(
+      feedback_df.rename(
+          columns={
+              "cohort": "Поток",
+              "module_id": "Модуль",
+              "student_id": "ID Студента",
+              "open_feedback": "Текст отзыва",
+              "energy_score": "Ресурс",
+              "pacing_score": "Ритм",
+          }
+      ),
+      use_container_width=True,
+  )
