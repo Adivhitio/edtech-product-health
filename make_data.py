@@ -1,78 +1,154 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 np.random.seed(42)
 
-n_students = 200
-student_ids = [f'STU_{1000 + i}' for i in range(1, n_students + 1)]
-modules = [f'MOD_0{i}' for i in range(1, 7)]
+courses = {
+    "DATA_SCI": {
+        "name": "Data Science с нуля",
+        "modules": 6,
+        "cohorts": ["DS-01 (Январь)", "DS-02 (Март)", "DS-03 (Май)"],
+    },
+    "PY_DEV": {
+        "name": "Python-разработчик",
+        "modules": 6,
+        "cohorts": ["PY-05 (Февраль)", "PY-06 (Апрель)", "PY-07 (Июнь)"],
+    },
+    "PROD_MGMT": {
+        "name": "Управление продуктом",
+        "modules": 4,
+        "cohorts": ["PM-10 (Январь)", "PM-11 (Апрель)"],
+    },
+}
 
-# Пул вербатимов (открытых текстов)
-comments_pool = [
-    "", "", "", "", "", "",  # Не все студенты оставляют комментарий
-    "Очень понравился практический разбор в этом модуле!",
-    "Слишком много теории, не успеваю за дедлайнами.",
-    "Не хватило разбора типовых ошибок в домашнем задании.",
-    "Спикер отлично объясняет сложные темы, спасибо!",
-    "Трудные практические кейсы, долго разбирался с тренажером.",
-    "Платформа иногда зависала при отправке решений.",
-    "Тьютор оперативно помог в чате, очень ценно."
-]
+sample_comments = {
+    "positive": [
+        "Всё отлично, материал структурирован.",
+        "Очень понравилась практика на реальных данных!",
+        "Лектор круто объясняет сложные алгоритмы.",
+        "Супер модуль, всё разложилось по полочкам.",
+    ],
+    "pacing": [
+        "Не успевал за дедлайнами, слишком много информации.",
+        "Очень плотный график, нужно больше времени на ДЗ.",
+        "Хотелось бы чуть больше времени на закрепление материала.",
+    ],
+    "cohesion": [
+        "Сложно связать теорию 2-го урока с практическим заданием.",
+        "В ДЗ требуют то, чего не было в лекциях.",
+        "Каша в голове после 3-го урока, не хватило сквозного примера.",
+    ],
+    "energy": [
+        "Сильно устал под конец модуля, еле сдал.",
+        "Выгораю, совмещать с работой очень тяжело.",
+        "Нужен небольшой перерыв перед следующим блоком.",
+    ],
+    "legacy": [
+        "Звук на вебинаре хрипел.",
+        "Тьютор проверял ДЗ более 4 дней.",
+        "Плеер периодически зависает на мобильном.",
+    ],
+}
 
-data = []
+rows = []
 
-for student in student_ids:
-    student_resilience = np.random.choice(['high', 'medium', 'low'], p=[0.3, 0.5, 0.2])
-    
-    for mod_idx, mod in enumerate(modules):
-        # 1. Core Pulse (3 вопроса)
-        if mod in ['MOD_03', 'MOD_04']:
-            pacing_p = [0.45, 0.50, 0.05] if student_resilience != 'low' else [0.65, 0.30, 0.05]
-        else:
-            pacing_p = [0.20, 0.75, 0.05]
-            
-        if mod in ['MOD_04', 'MOD_05']:
-            cohesion_p = [0.60, 0.30, 0.10]
-        else:
-            cohesion_p = [0.80, 0.15, 0.05]
-            
-        if mod_idx >= 3:
-            energy_p = [0.25, 0.45, 0.30] if student_resilience == 'low' else [0.40, 0.45, 0.15]
-        else:
-            energy_p = [0.65, 0.30, 0.05]
-            
-        pacing = np.random.choice(['rushed', 'optimal', 'slow'], p=pacing_p)
-        cohesion = np.random.choice(['clear', 'confused', 'fragmented'], p=cohesion_p)
-        energy = np.random.choice(['high', 'moderate', 'depleted'], p=energy_p)
-        
-        # 2. Legacy CSAT (5 вопросов по шкале 1-5)
-        base_mean = 4.5 if student_resilience == 'high' else (4.1 if student_resilience == 'medium' else 3.6)
-        if cohesion == 'fragmented':
-            base_mean -= 0.7
-            
-        legacy_speaker = int(np.clip(np.random.normal(base_mean, 0.6), 1, 5))
-        legacy_platform = int(np.clip(np.random.normal(4.3, 0.6), 1, 5))
-        legacy_homework = int(np.clip(np.random.normal(base_mean - 0.2, 0.8), 1, 5))
-        legacy_materials = int(np.clip(np.random.normal(base_mean, 0.6), 1, 5))
-        legacy_support = int(np.clip(np.random.normal(4.4, 0.7), 1, 5))
-        
-        # 3. Open Feedback (Открытый вопрос)
-        open_text = np.random.choice(comments_pool)
-        
-        data.append({
-            'student_id': student,
-            'module_id': mod,
-            'pacing_score': pacing,
-            'cohesion_score': cohesion,
-            'energy_score': energy,
-            'legacy_speaker': legacy_speaker,
-            'legacy_platform': legacy_platform,
-            'legacy_homework': legacy_homework,
-            'legacy_materials': legacy_materials,
-            'legacy_support': legacy_support,
-            'open_feedback_text': open_text
+for c_key, c_info in courses.items():
+  for cohort in c_info["cohorts"]:
+    num_students = 100
+    student_ids = [
+        f"{c_key[:3]}_{cohort.split()[0]}_{i:03d}"
+        for i in range(1, num_students + 1)
+    ]
+
+    for mod_num in range(1, c_info["modules"] + 1):
+      mod_id = f"MOD_{mod_num:02d}"
+      difficulty_bias = 0.15 if mod_num in [3, 4] else 0.0
+      fatigue_bias = 0.05 * mod_num
+
+      for s_id in student_ids:
+        # Pacing
+        p_rushed = min(0.6, 0.15 + difficulty_bias + np.random.uniform(0, 0.08))
+        p_slow = 0.10
+        p_opt = max(0.2, 1.0 - p_rushed - p_slow)
+        pacing = np.random.choice(
+            ["rushed", "optimal", "slow"], p=[p_rushed, p_opt, p_slow]
+        )
+
+        # Cohesion
+        p_frag = min(0.4, 0.08 + difficulty_bias + np.random.uniform(0, 0.06))
+        p_conf = min(0.5, 0.20 + difficulty_bias)
+        p_clear = max(0.2, 1.0 - p_frag - p_conf)
+        cohesion = np.random.choice(
+            ["clear", "confused", "fragmented"], p=[p_clear, p_conf, p_frag]
+        )
+
+        # Energy
+        p_dep = min(
+            0.55,
+            0.10
+            + fatigue_bias * 0.05
+            + (0.15 if pacing == "rushed" else 0.0)
+            + (0.10 if cohesion == "fragmented" else 0.0),
+        )
+        p_mod = 0.40
+        p_high = max(0.1, 1.0 - p_dep - p_mod)
+        energy = np.random.choice(
+            ["high", "moderate", "depleted"], p=[p_high, p_mod, p_dep]
+        )
+
+        # Legacy ratings (1-5)
+        base = (
+            4.4
+            - (0.6 if pacing == "rushed" else 0)
+            - (0.8 if cohesion == "fragmented" else 0)
+        )
+
+        def gen_score(b_val):
+          weights = [
+              max(0.01, 1.0 - b_val / 2),
+              max(0.02, 1.5 - b_val / 2.5),
+              max(0.05, 2.0 - b_val / 3),
+              max(0.1, b_val / 5),
+              max(0.15, (b_val / 5) ** 2),
+          ]
+          w = np.array(weights)
+          return int(np.random.choice([1, 2, 3, 4, 5], p=w / w.sum()))
+
+        score_spk = gen_score(base + np.random.normal(0.2, 0.3))
+        score_hw = gen_score(base - (0.3 if cohesion != "clear" else 0))
+        score_plt = gen_score(4.5 + np.random.normal(0, 0.2))
+        score_sup = gen_score(4.3 + np.random.normal(0, 0.3))
+
+        # Verbatim
+        comment = ""
+        if np.random.rand() < 0.25:
+          if energy == "depleted":
+            comment = np.random.choice(sample_comments["energy"])
+          elif pacing == "rushed":
+            comment = np.random.choice(sample_comments["pacing"])
+          elif cohesion == "fragmented":
+            comment = np.random.choice(sample_comments["cohesion"])
+          elif score_spk <= 2 or score_hw <= 2:
+            comment = np.random.choice(sample_comments["legacy"])
+          else:
+            comment = np.random.choice(sample_comments["positive"])
+
+        rows.append({
+            "course_key": c_key,
+            "course_name": c_info["name"],
+            "cohort": cohort,
+            "student_id": s_id,
+            "module_id": mod_id,
+            "pacing_score": pacing,
+            "cohesion_score": cohesion,
+            "energy_score": energy,
+            "legacy_speaker": score_spk,
+            "legacy_hw": score_hw,
+            "legacy_platform": score_plt,
+            "legacy_support": score_sup,
+            "open_feedback": comment,
         })
 
-df = pd.DataFrame(data)
-df.to_csv('pulse_6_modules_clean.csv', index=False)
-print("✅ Данные сгенерированы! Файл pulse_6_modules_clean.csv обновлен.")
+df = pd.DataFrame(rows)
+df.to_csv("pulse_multi_course_data.csv", index=False, encoding="utf-8-sig")
+print(f"Датасет успешно создан: {len(df)} записей.")
