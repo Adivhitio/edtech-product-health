@@ -9,10 +9,162 @@ st.set_page_config(
 )
 
 
-# Загрузка данных
+# Загрузка или автоматическая генерация данных в памяти
 @st.cache_data
 def load_data():
-  return pd.read_csv("pulse_multi_course_data.csv")
+  try:
+    return pd.read_csv("pulse_multi_course_data.csv")
+  except FileNotFoundError:
+    np.random.seed(42)
+    courses = {
+        "DATA_SCI": {
+            "name": "Data Science с нуля",
+            "modules": 6,
+            "cohorts": ["DS-01 (Январь)", "DS-02 (Март)", "DS-03 (Май)"],
+        },
+        "PY_DEV": {
+            "name": "Python-разработчик",
+            "modules": 6,
+            "cohorts": ["PY-05 (Февраль)", "PY-06 (Апрель)", "PY-07 (Июнь)"],
+        },
+        "PROD_MGMT": {
+            "name": "Управление продуктом",
+            "modules": 4,
+            "cohorts": ["PM-10 (Январь)", "PM-11 (Апрель)"],
+        },
+    }
+
+    sample_comments = {
+        "positive": [
+            "Всё отлично, материал структурирован.",
+            "Очень понравилась практика на реальных данных!",
+            "Лектор круто объясняет сложные алгоритмы.",
+            "Супер модуль, всё разложилось по полочкам.",
+        ],
+        "pacing": [
+            "Не успевал за дедлайнами, слишком много информации.",
+            "Очень плотный график, нужно больше времени на ДЗ.",
+            "Хотелось бы чуть больше времени на закрепление материала.",
+        ],
+        "cohesion": [
+            "Сложно связать теорию 2-го урока с практическим заданием.",
+            "В ДЗ требуют то, чего не было в лекциях.",
+            "Каша в голове после 3-го урока, не хватило сквозного примера.",
+        ],
+        "energy": [
+            "Сильно устал под конец модуля, еле сдал.",
+            "Выгораю, совмещать с работой очень тяжело.",
+            "Нужен небольшой перерыв перед следующим блоком.",
+        ],
+        "legacy": [
+            "Звук на вебинаре хрипел.",
+            "Тьютор проверял ДЗ более 4 дней.",
+            "Плеер периодически зависает на мобильном.",
+        ],
+    }
+
+    rows = []
+    for c_key, c_info in courses.items():
+      for cohort in c_info["cohorts"]:
+        num_students = 100
+        student_ids = [
+            f"{c_key[:3]}_{cohort.split()[0]}_{i:03d}"
+            for i in range(1, num_students + 1)
+        ]
+
+        for mod_num in range(1, c_info["modules"] + 1):
+          mod_id = f"MOD_{mod_num:02d}"
+          difficulty_bias = 0.15 if mod_num in [3, 4] else 0.0
+          fatigue_bias = 0.05 * mod_num
+
+          for s_id in student_ids:
+            # Pacing
+            p_rushed = min(
+                0.6, 0.15 + difficulty_bias + np.random.uniform(0, 0.08)
+            )
+            p_slow = 0.10
+            p_opt = max(0.2, 1.0 - p_rushed - p_slow)
+            pacing = np.random.choice(
+                ["rushed", "optimal", "slow"], p=[p_rushed, p_opt, p_slow]
+            )
+
+            # Cohesion
+            p_frag = min(
+                0.4, 0.08 + difficulty_bias + np.random.uniform(0, 0.06)
+            )
+            p_conf = min(0.5, 0.20 + difficulty_bias)
+            p_clear = max(0.2, 1.0 - p_frag - p_conf)
+            cohesion = np.random.choice(
+                ["clear", "confused", "fragmented"],
+                p=[p_clear, p_conf, p_frag],
+            )
+
+            # Energy
+            p_dep = min(
+                0.55,
+                0.10
+                + fatigue_bias * 0.05
+                + (0.15 if pacing == "rushed" else 0.0)
+                + (0.10 if cohesion == "fragmented" else 0.0),
+            )
+            p_mod = 0.40
+            p_high = max(0.1, 1.0 - p_dep - p_mod)
+            energy = np.random.choice(
+                ["high", "moderate", "depleted"], p=[p_high, p_mod, p_dep]
+            )
+
+            # Legacy ratings (1-5)
+            base = (
+                4.4
+                - (0.6 if pacing == "rushed" else 0)
+                - (0.8 if cohesion == "fragmented" else 0)
+            )
+
+            def gen_score(b_val):
+              weights = [
+                  max(0.01, 1.0 - b_val / 2),
+                  max(0.02, 1.5 - b_val / 2.5),
+                  max(0.05, 2.0 - b_val / 3),
+                  max(0.1, b_val / 5),
+                  max(0.15, (b_val / 5) ** 2),
+              ]
+              w = np.array(weights)
+              return int(np.random.choice([1, 2, 3, 4, 5], p=w / w.sum()))
+
+            score_spk = gen_score(base + np.random.normal(0.2, 0.3))
+            score_hw = gen_score(base - (0.3 if cohesion != "clear" else 0))
+            score_plt = gen_score(4.5 + np.random.normal(0, 0.2))
+            score_sup = gen_score(4.3 + np.random.normal(0, 0.3))
+
+            comment = ""
+            if np.random.rand() < 0.25:
+              if energy == "depleted":
+                comment = np.random.choice(sample_comments["energy"])
+              elif pacing == "rushed":
+                comment = np.random.choice(sample_comments["pacing"])
+              elif cohesion == "fragmented":
+                comment = np.random.choice(sample_comments["cohesion"])
+              elif score_spk <= 2 or score_hw <= 2:
+                comment = np.random.choice(sample_comments["legacy"])
+              else:
+                comment = np.random.choice(sample_comments["positive"])
+
+            rows.append({
+                "course_key": c_key,
+                "course_name": c_info["name"],
+                "cohort": cohort,
+                "student_id": s_id,
+                "module_id": mod_id,
+                "pacing_score": pacing,
+                "cohesion_score": cohesion,
+                "energy_score": energy,
+                "legacy_speaker": score_spk,
+                "legacy_hw": score_hw,
+                "legacy_platform": score_plt,
+                "legacy_support": score_sup,
+                "open_feedback": comment,
+            })
+    return pd.DataFrame(rows)
 
 
 df_raw = load_data()
@@ -20,7 +172,7 @@ df_raw = load_data()
 # Сайдбар: Фильтры
 st.sidebar.title("🎛 Фильтры анализа")
 
-course_list = df_raw["course_name"].unique()
+course_list = sorted(df_raw["course_name"].unique())
 selected_course = st.sidebar.selectbox("Выберите курс:", course_list)
 
 course_df = df_raw[df_raw["course_name"] == selected_course]
@@ -67,7 +219,6 @@ tab1, tab2, tab3 = st.tabs([
 with tab1:
   st.subheader("Метрики состояния студентов (Module Health Index)")
 
-  # Расчет KPI
   total_resp = len(df_filtered)
   pct_rushed = (
       (df_filtered["pacing_score"] == "rushed").sum() / total_resp * 100
@@ -85,7 +236,6 @@ with tab1:
       else 0
   )
 
-  # MHI Rate (% студентов без единого критического сигнала)
   clean_health = (
       (df_filtered["pacing_score"] != "rushed")
       & (df_filtered["cohesion_score"] != "fragmented")
@@ -121,7 +271,6 @@ with tab1:
 
   st.divider()
 
-  # Графики 100% Stacked Bar по 3 вопросам
   st.markdown("##### 📌 Распределение ответов по модулям")
   c1, c2, c3 = st.columns(3)
 
@@ -188,7 +337,6 @@ with tab1:
     )
     st.plotly_chart(fig_energy, use_container_width=True)
 
-  # Межпоточный анализ тренда (если выбрано >1 когорты)
   if len(selected_cohorts) > 1:
     st.divider()
     st.markdown("##### 📈 Межпоточный тренд: Доля алертов по когортам")
@@ -248,7 +396,6 @@ with tab2:
       "legacy_support": "Служба поддержки / Сопровождение",
   }
 
-  # Сводная таблица Top-2 / Bottom-2 Box
   summary_rows = []
   for col, name in legacy_map.items():
     s = df_filtered[col]
@@ -273,7 +420,6 @@ with tab2:
 
   st.divider()
 
-  # Deep-Dive Селектор конкретного вопроса
   st.markdown("##### 🔍 Фокусный Deep-Dive по конкретному вопросу")
   focus_col_name = st.selectbox(
       "Выберите параметр для детального анализа распределения:",
@@ -284,7 +430,6 @@ with tab2:
   col_chart, col_pivot = st.columns([3, 2])
 
   with col_chart:
-    # 100% Stacked Bar для оценок 1-5
     ct_leg = (
         pd.crosstab(
             df_filtered["module_id"], df_filtered[focus_col], normalize="index"
@@ -316,9 +461,7 @@ with tab2:
         color_discrete_map=grade_colors,
         category_orders={"Оценка": [1, 2, 3, 4, 5]},
         title=f"Распределение оценок (1–5): {focus_col_name}",
-        text=melted_leg["Доля"].apply(
-            lambda v: f"{v:.0f}%" if v >= 6 else ""
-        ),
+        text=melted_leg["Доля"].apply(lambda v: f"{v:.0f}%" if v >= 6 else ""),
     )
     fig_leg.update_layout(
         barmode="stack",
@@ -347,7 +490,6 @@ with tab2:
 with tab3:
   st.subheader("Операционный контур реагирования (Closed-Loop)")
 
-  # Формирование списка Churn Risk
   churn_condition = (df_filtered["energy_score"] == "depleted") & (
       (df_filtered["pacing_score"] == "rushed")
       | (df_filtered["cohesion_score"] == "fragmented")
@@ -355,7 +497,16 @@ with tab3:
   )
 
   df_alerts = df_filtered[churn_condition][
-      ["cohort", "student_id", "module_id", "energy_score", "pacing_score", "cohesion_score", "legacy_hw", "open_feedback"]
+      [
+          "cohort",
+          "student_id",
+          "module_id",
+          "energy_score",
+          "pacing_score",
+          "cohesion_score",
+          "legacy_hw",
+          "open_feedback",
+      ]
   ].copy()
 
   st.markdown(
@@ -387,11 +538,17 @@ with tab3:
 
   st.divider()
 
-  # Таблица открытых отзывов
   st.markdown("##### 💬 Лента открытых комментариев")
-  feedback_df = df_filtered[
-      df_filtered["open_feedback"].str.len() > 0
-  ][["cohort", "module_id", "student_id", "open_feedback", "energy_score", "pacing_score"]]
+  feedback_df = df_filtered[df_filtered["open_feedback"].str.len() > 0][
+      [
+          "cohort",
+          "module_id",
+          "student_id",
+          "open_feedback",
+          "energy_score",
+          "pacing_score",
+      ]
+  ]
 
   search_term = st.text_input(
       "Поиск по ключевым словам в комментариях:",
@@ -399,7 +556,9 @@ with tab3:
   )
   if search_term:
     feedback_df = feedback_df[
-        feedback_df["open_feedback"].str.contains(search_term, case=False, na=False)
+        feedback_df["open_feedback"].str.contains(
+            search_term, case=False, na=False
+        )
     ]
 
   st.dataframe(
